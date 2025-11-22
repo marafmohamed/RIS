@@ -1,7 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const morgan = require('morgan');
 require('dotenv').config();
 
 const authRoutes = require('./routes/auth');
@@ -15,13 +14,11 @@ const settingsRoutes = require('./routes/settings');
 const app = express();
 
 // Middleware
-app.use(morgan('dev'));
 
 // CORS Configuration - Allow multiple origins
 const allowedOrigins = [
   'http://localhost:3000',
-  'https://ris-frontend-mu.vercel.app',
-  process.env.FRONTEND_URL
+  'https://ris-frontend-mu.vercel.app'
 ].filter(Boolean);
 
 app.use(cors({
@@ -36,11 +33,6 @@ app.use(cors({
     return callback(null, true);
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  exposedHeaders: ['Content-Type', 'Authorization'],
-  preflightContinue: false,
-  optionsSuccessStatus: 204
 }));
 
 app.use(express.json({ limit: '10mb' }));
