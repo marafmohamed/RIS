@@ -1,7 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const helmet = require('helmet');
 const morgan = require('morgan');
 require('dotenv').config();
 
@@ -16,10 +15,6 @@ const settingsRoutes = require('./routes/settings');
 const app = express();
 
 // Middleware
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" },
-  crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" }
-}));
 app.use(morgan('dev'));
 
 // CORS Configuration - Allow multiple origins
