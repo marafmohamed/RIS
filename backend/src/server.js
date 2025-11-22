@@ -16,7 +16,10 @@ const settingsRoutes = require('./routes/settings');
 const app = express();
 
 // Middleware
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" }
+}));
 app.use(morgan('dev'));
 
 // CORS Configuration - Allow multiple origins
@@ -95,7 +98,10 @@ app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     message: 'RIS Backend is running',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    cors: {
+      allowedOrigins: allowedOrigins
+    }
   });
 });
 
