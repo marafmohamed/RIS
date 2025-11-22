@@ -159,7 +159,7 @@ export default function SettingsPage() {
                 placeholder="e.g., l'EPH MAZOUNA"
               />
               <p className="mt-1 text-sm text-gray-500">
-                This will appear in the report header: "Examen réalisé au niveau de [Hospital Name]"
+                This will appear in the report header: &ldquo;Examen réalisé au niveau de [Hospital Name]&ldquo;
               </p>
             </div>
 

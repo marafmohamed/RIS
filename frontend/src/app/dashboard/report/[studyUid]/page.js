@@ -342,7 +342,7 @@ export default function ReportPage() {
                 INTERPRETATION DE {study.studyDescription?.toUpperCase() || study.modality?.toUpperCase()}
               </h2>
               <p className="text-sm text-center font-semibold text-blue-800">
-                Examen réalisé au niveau de l'EPH MAZOUNA
+                Examen réalisé au niveau de l&apos;EPH MAZOUNA
               </p>
             </div>
 
@@ -390,9 +390,9 @@ export default function ReportPage() {
             <div className="mt-4 p-4 bg-blue-50 rounded-lg">
               <h3 className="font-medium text-blue-900 mb-2">Conseils:</h3>
               <ul className="text-sm text-blue-800 space-y-1">
-                <li>• Utilisez l'éditeur de texte enrichi pour formater votre rapport</li>
-                <li>• Cliquez sur "Export Word" ou "Export PDF" pour télécharger le rapport professionnel</li>
-                <li>• Sauvegardez en tant que brouillon pour continuer l'édition plus tard</li>
+                <li>• Utilisez l&apos;éditeur de texte enrichi pour formater votre rapport</li>
+                <li>• Cliquez sur &lsquo;Export Word&lsquo; ou &lsquo;Export PDF&lsquo; pour télécharger le rapport professionnel</li>
+                <li>• Sauvegardez en tant que brouillon pour continuer l&lsquo;édition plus tard</li>
                 <li>• Finalisez le rapport quand il est prêt</li>
               </ul>
             </div>
