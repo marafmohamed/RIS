@@ -229,7 +229,7 @@ export default function DashboardPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <Link
-                          href={`/dashboard/report/${study.studyInstanceUid}`}
+                          href={`/reporting/${study.studyInstanceUid}`}
                           className="text-blue-600 hover:text-blue-900"
                         >
                           <FiFileText className="inline mr-1" />

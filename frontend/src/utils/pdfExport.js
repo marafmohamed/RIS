@@ -151,30 +151,79 @@ const ReportPDF = ({ reportData, settings = {} }) => {
     year: 'numeric'
   });
 
-  // Strip HTML from findings and preserve line breaks
-  const parseHtmlToText = (html) => {
+  // Parse HTML to structured paragraphs with alignment
+  const parseHtmlToStructuredContent = (html) => {
+    if (!html) return [];
+    
+    const paragraphs = [];
+    
     if (typeof document !== 'undefined') {
       const temp = document.createElement('div');
       temp.innerHTML = html || '';
       
-      // Replace <br> and </p> with newlines before extracting text
-      let processedHtml = (html || '')
+      const getAlignment = (element) => {
+        const textAlign = element.style.textAlign || element.getAttribute('data-text-align');
+        return textAlign || 'left';
+      };
+      
+      const children = Array.from(temp.children);
+      
+      if (children.length === 0) {
+        // Plain text
+        const text = temp.textContent || '';
+        if (text.trim()) {
+          paragraphs.push({ text: text.trim(), alignment: 'left', isList: false });
+        }
+      } else {
+        children.forEach(child => {
+          const tagName = child.tagName.toLowerCase();
+          const text = child.textContent.trim();
+          const alignment = getAlignment(child);
+          
+          if (!text) return;
+          
+          if (tagName === 'ul') {
+            // Bullet list
+            const items = Array.from(child.getElementsByTagName('li'));
+            items.forEach(li => {
+              const liText = li.textContent.trim();
+              if (liText) {
+                paragraphs.push({ text: `• ${liText}`, alignment: 'left', isList: true });
+              }
+            });
+          } else if (tagName === 'ol') {
+            // Numbered list
+            const items = Array.from(child.getElementsByTagName('li'));
+            items.forEach((li, index) => {
+              const liText = li.textContent.trim();
+              if (liText) {
+                paragraphs.push({ text: `${index + 1}. ${liText}`, alignment: 'left', isList: true });
+              }
+            });
+          } else {
+            paragraphs.push({ text, alignment, isList: false });
+          }
+        });
+      }
+    } else {
+      // Server-side fallback
+      const cleanText = (html || '')
         .replace(/<br\s*\/?>/gi, '\n')
         .replace(/<\/p>/gi, '\n')
         .replace(/<li>/gi, '• ')
-        .replace(/<\/li>/gi, '\n');
+        .replace(/<\/li>/gi, '\n')
+        .replace(/<[^>]*>/g, '');
       
-      temp.innerHTML = processedHtml;
-      return temp.textContent || temp.innerText || '';
+      const lines = cleanText.split('\n').filter(line => line.trim());
+      lines.forEach(line => {
+        paragraphs.push({ text: line.trim(), alignment: 'left', isList: false });
+      });
     }
-    return (html || '')
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<\/p>/gi, '\n')
-      .replace(/<li>/gi, '• ')
-      .replace(/<[^>]*>/g, '');
+    
+    return paragraphs;
   };
 
-  const findingsText = parseHtmlToText(findings);
+  const findingsParagraphs = parseHtmlToStructuredContent(findings);
   const conclusionLines = (conclusion || "LECTURE SUR CD D'UNE IMAGERIE SANS PARTICULARITÉS SIGNIFICATIVES NOTABLES.")
     .split('\n')
     .filter(line => line.trim());
@@ -214,13 +263,18 @@ const ReportPDF = ({ reportData, settings = {} }) => {
         </View>
 
         {/* Results - User creates their own section titles */}
-        {findingsText ? (
-          findingsText.split('\n').map((line, index) => (
-            line.trim() ? (
-              <Text key={index} style={styles.paragraph}>
-                {line.trim()}
-              </Text>
-            ) : null
+        {findingsParagraphs.length > 0 ? (
+          findingsParagraphs.map((para, index) => (
+            <Text 
+              key={index} 
+              style={{
+                ...styles.paragraph,
+                textAlign: para.alignment,
+                marginLeft: para.isList ? 20 : 0
+              }}
+            >
+              {para.text}
+            </Text>
           ))
         ) : (
           <Text style={styles.paragraph}>[Contenu du rapport]</Text>
@@ -269,4 +323,35 @@ export const downloadPDFReport = async (reportData, settings = {}) => {
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
+};
+
+/**
+ * Wrapper function to match the signature used in reporting page
+ */
+export const exportToPDF = async (
+  reportContent,
+  patientName,
+  patientID,
+  studyDescription,
+  studyDate,
+  hospitalName,
+  footerText
+) => {
+  const reportData = {
+    patientName,
+    patientId: patientID,
+    patientAge: null,
+    studyDescription,
+    studyDate,
+    modality: '',
+    findings: reportContent,
+    conclusion: ''
+  };
+
+  const settings = {
+    hospitalName,
+    footerText
+  };
+
+  return downloadPDFReport(reportData, settings);
 };

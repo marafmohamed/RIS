@@ -53,6 +53,26 @@ export const downloadWordReport = async (reportData, settings = {}) => {
   });
 
   const doc = new Document({
+    numbering: {
+      config: [
+        {
+          reference: 'default-numbering',
+          levels: [
+            {
+              level: 0,
+              format: 'decimal',
+              text: '%1.',
+              alignment: AlignmentType.LEFT,
+              style: {
+                paragraph: {
+                  indent: { left: 720, hanging: 360 },
+                },
+              },
+            },
+          ],
+        },
+      ],
+    },
     sections: [{
       properties: {
         page: {
@@ -243,7 +263,7 @@ export const downloadWordReport = async (reportData, settings = {}) => {
 
 /**
  * Parse HTML content from rich text editor to Word paragraphs
- * Handles formatting: bold, italic, headings, lists, line breaks
+ * Handles formatting: bold, italic, headings, lists, line breaks, text alignment
  */
 function parseHtmlToDocxParagraphs(htmlContent) {
   if (!htmlContent) return [
@@ -259,38 +279,60 @@ function parseHtmlToDocxParagraphs(htmlContent) {
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = htmlContent;
     
-    // Process each child node
-    const processNode = (node) => {
+    // Helper to get alignment from style
+    const getAlignment = (element) => {
+      const textAlign = element.style.textAlign || element.getAttribute('data-text-align');
+      switch (textAlign) {
+        case 'center': return AlignmentType.CENTER;
+        case 'right': return AlignmentType.RIGHT;
+        case 'justify': return AlignmentType.JUSTIFIED;
+        default: return AlignmentType.LEFT;
+      }
+    };
+    
+    // Process each child node for inline formatting
+    const processNode = (node, parentStyles = {}) => {
       if (node.nodeType === Node.TEXT_NODE) {
-        const text = node.textContent.trim();
+        const text = node.textContent;
         if (text) {
-          return new TextRun({ text, size: 22 });
+          return new TextRun({ text, size: 22, ...parentStyles });
         }
         return null;
       }
       
       if (node.nodeType === Node.ELEMENT_NODE) {
         const tagName = node.tagName.toLowerCase();
-        const text = node.textContent.trim();
+        const newStyles = { ...parentStyles };
         
-        if (!text) return null;
-        
-        // Handle different HTML elements
+        // Apply formatting based on tag
         switch (tagName) {
           case 'strong':
           case 'b':
-            return new TextRun({ text, bold: true, size: 22 });
-          
+            newStyles.bold = true;
+            break;
           case 'em':
           case 'i':
-            return new TextRun({ text, italics: true, size: 22 });
-          
+            newStyles.italics = true;
+            break;
           case 'u':
-            return new TextRun({ text, underline: {}, size: 22 });
-          
-          default:
-            return new TextRun({ text, size: 22 });
+            newStyles.underline = {};
+            break;
         }
+        
+        // Recursively process child nodes
+        const runs = [];
+        Array.from(node.childNodes).forEach(child => {
+          const run = processNode(child, newStyles);
+          if (run) {
+            if (Array.isArray(run)) {
+              runs.push(...run);
+            } else {
+              runs.push(run);
+            }
+          }
+        });
+        
+        return runs.length > 0 ? runs : null;
       }
       
       return null;
@@ -298,6 +340,7 @@ function parseHtmlToDocxParagraphs(htmlContent) {
     
     // Process block-level elements
     const children = Array.from(tempDiv.children);
+    let listCounter = 1; // For numbered lists
     
     if (children.length === 0) {
       // No block elements, just text
@@ -323,32 +366,79 @@ function parseHtmlToDocxParagraphs(htmlContent) {
         if (!text) return;
         
         if (tagName === 'p') {
-          // Handle paragraphs
+          // Handle paragraphs with alignment
           const runs = [];
-          Array.from(child.childNodes).forEach(node => {
-            const run = processNode(node);
-            if (run) runs.push(run);
-          });
+          const processedNodes = processNode(child);
+          
+          if (processedNodes) {
+            const runsArray = Array.isArray(processedNodes) ? processedNodes : [processedNodes];
+            runs.push(...runsArray.filter(r => r));
+          }
+          
+          // Fallback if no formatted runs
+          if (runs.length === 0 && text) {
+            runs.push(new TextRun({ text, size: 22 }));
+          }
           
           if (runs.length > 0) {
             paragraphs.push(
               new Paragraph({
                 children: runs,
+                alignment: getAlignment(child),
                 spacing: { after: 150 }
               })
             );
           }
-        } else if (tagName === 'ul' || tagName === 'ol') {
-          // Handle lists
+        } else if (tagName === 'ul') {
+          // Handle bullet lists
           const items = Array.from(child.getElementsByTagName('li'));
-          items.forEach(li => {
+          items.forEach((li, index) => {
             const liText = li.textContent.trim();
             if (liText) {
+              const runs = [];
+              const processedNodes = processNode(li);
+              
+              if (processedNodes) {
+                const runsArray = Array.isArray(processedNodes) ? processedNodes : [processedNodes];
+                runs.push(...runsArray.filter(r => r));
+              }
+              
+              if (runs.length === 0) {
+                runs.push(new TextRun({ text: liText, size: 22 }));
+              }
+              
               paragraphs.push(
                 new Paragraph({
-                  children: [new TextRun({ text: `• ${liText}`, size: 22 })],
-                  spacing: { after: 150 },
-                  indent: { left: 720 } // Indent list items
+                  children: runs,
+                  bullet: { level: 0 },
+                  spacing: { after: 150 }
+                })
+              );
+            }
+          });
+        } else if (tagName === 'ol') {
+          // Handle numbered lists
+          const items = Array.from(child.getElementsByTagName('li'));
+          items.forEach((li, index) => {
+            const liText = li.textContent.trim();
+            if (liText) {
+              const runs = [];
+              const processedNodes = processNode(li);
+              
+              if (processedNodes) {
+                const runsArray = Array.isArray(processedNodes) ? processedNodes : [processedNodes];
+                runs.push(...runsArray.filter(r => r));
+              }
+              
+              if (runs.length === 0) {
+                runs.push(new TextRun({ text: liText, size: 22 }));
+              }
+              
+              paragraphs.push(
+                new Paragraph({
+                  children: runs,
+                  numbering: { reference: 'default-numbering', level: 0 },
+                  spacing: { after: 150 }
                 })
               );
             }
@@ -361,6 +451,7 @@ function parseHtmlToDocxParagraphs(htmlContent) {
           paragraphs.push(
             new Paragraph({
               children: [new TextRun({ text, bold: true, size })],
+              alignment: getAlignment(child),
               spacing: { before: 200, after: 150 }
             })
           );
@@ -369,6 +460,7 @@ function parseHtmlToDocxParagraphs(htmlContent) {
           paragraphs.push(
             new Paragraph({
               children: [new TextRun({ text, size: 22 })],
+              alignment: getAlignment(child),
               spacing: { after: 150 }
             })
           );
@@ -441,6 +533,39 @@ function parseConclusionToDocxParagraphs(conclusion) {
     })
   );
 }
+
+/**
+ * Wrapper function to match the signature used in reporting page
+ */
+export const exportToWord = async (
+  reportContent,
+  patientName,
+  patientID,
+  studyDescription,
+  studyDate,
+  hospitalName,
+  footerText
+) => {
+  const reportData = {
+    patientName,
+    patientId: patientID,
+    patientAge: null,
+    studyDescription,
+    studyDate,
+    modality: '',
+    reportContent,
+    findings: reportContent,
+    conclusion: '',
+    doctorName: ''
+  };
+
+  const settings = {
+    hospitalName,
+    footerText
+  };
+
+  return downloadWordReport(reportData, settings);
+};
 
 /**
  * Get exam template content (empty by default - user creates their own)

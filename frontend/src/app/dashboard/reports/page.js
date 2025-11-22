@@ -462,7 +462,7 @@ export default function ReportsPage() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                           <Link
-                            href={`/dashboard/report/${report.studyInstanceUid}`}
+                            href={`/reporting/${report.studyInstanceUid}`}
                             className="text-blue-600 hover:text-blue-900"
                           >
                             <FiEye className="inline mr-1" />

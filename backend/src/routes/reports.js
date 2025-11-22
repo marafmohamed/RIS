@@ -48,10 +48,10 @@ router.get('/study/:studyUid', async (req, res) => {
       .populate('authorId', 'fullName email');
 
     if (!report) {
-      return res.status(404).json({ error: 'Report not found' });
+      return res.status(404).json({ data: null });
     }
 
-    res.json(report);
+    res.json({ data: report });
   } catch (error) {
     console.error('Get report error:', error);
     res.status(500).json({ error: 'Failed to fetch report' });
