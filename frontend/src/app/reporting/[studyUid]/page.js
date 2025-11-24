@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import { Monitor, Save, X, FileText, Download } from 'lucide-react';
-import ReportEditor from '@/components/reporting/ReportEditor';
-import { reportsAPI, studiesAPI } from '@/lib/api';
+import { Monitor, Save, X, FileText, Download, LayoutGrid, ChevronDown } from 'lucide-react';
+import ReportEditorV2 from '@/components/reporting/ReportEditorV2';
+import OHIFViewer from '@/components/reporting/OHIFViewer';
+import { reportsAPI, studiesAPI, templatesAPI } from '@/lib/api';
 import { toast } from 'sonner';
 import { exportToWord } from '@/utils/wordExport';
 import { exportToPDF } from '@/utils/pdfExport';
@@ -16,14 +17,18 @@ export default function ReportingPage({ params }) {
 
   const [study, setStudy] = useState(null);
   const [existingReport, setExistingReport] = useState(null);
-  const [reportContent, setReportContent] = useState('');
+  const [reportData, setReportData] = useState({ technique: '', findings: '', conclusion: '' });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [viewerDetached, setViewerDetached] = useState(false);
+  const [viewerMode, setViewerMode] = useState('hidden'); // 'split', 'hidden', 'detached' - default to hidden
   const [detachedWindow, setDetachedWindow] = useState(null);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
 
   useEffect(() => {
     loadStudyAndReport();
+    loadCurrentUser();
   }, [studyUid]);
 
   useEffect(() => {
@@ -47,23 +52,25 @@ export default function ReportingPage({ params }) {
       try {
         const reportResponse = await reportsAPI.getByStudyUid(studyUid);
         if (reportResponse.data && reportResponse.data.data) {
-          // Backend wraps response in { data: report }
-          setExistingReport(reportResponse.data.data);
-          setReportContent(reportResponse.data.data.content || '');
+          const report = reportResponse.data.data;
+          setExistingReport(report);
+          // Parse report content into sections
+          const content = report.content || '';
+          const parsedData = parseReportSections(content);
+          setReportData(parsedData);
         } else if (reportResponse.data && reportResponse.data._id) {
-          // Direct report object
-          setExistingReport(reportResponse.data);
-          setReportContent(reportResponse.data.content || '');
+          const report = reportResponse.data;
+          setExistingReport(report);
+          const parsedData = parseReportSections(report.content || '');
+          setReportData(parsedData);
         } else {
-          // No report found
           setExistingReport(null);
-          setReportContent('');
+          setReportData({ technique: '', findings: '', conclusion: '' });
         }
       } catch (err) {
-        // No existing report or error fetching it
         console.log('No existing report found:', err.message);
         setExistingReport(null);
-        setReportContent('');
+        setReportData({ technique: '', findings: '', conclusion: '' });
       }
     } catch (error) {
       console.error('Error loading study:', error);
@@ -71,6 +78,71 @@ export default function ReportingPage({ params }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadCurrentUser = async () => {
+    try {
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      setCurrentUser(user);
+    } catch (error) {
+      console.error('Failed to load user:', error);
+    }
+  };
+
+  const handleApplyTemplate = async (template) => {
+    try {
+      // Set the report data with template content
+      setReportData({
+        technique: template.technique || '',
+        findings: template.findings || '',
+        conclusion: template.conclusion || ''
+      });
+      
+      // Increment usage count
+      await templatesAPI.incrementUsage(template._id);
+      
+      setShowTemplateMenu(false);
+      toast.success(`Template "${template.name}" applied`);
+    } catch (error) {
+      console.error('Failed to apply template:', error);
+      toast.error('Failed to apply template');
+    }
+  };
+
+  // Extract plain text preview from HTML
+  const getTextPreview = (html) => {
+    if (!html) return '';
+    if (typeof document === 'undefined') return '';
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    const text = div.textContent || div.innerText || '';
+    return text.substring(0, 50) + (text.length > 50 ? '...' : '');
+  };
+
+  // Parse report content into technique, findings, and conclusion
+  const parseReportSections = (content) => {
+    if (!content) {
+      return { technique: '', findings: '', conclusion: '' };
+    }
+
+    // Try to parse sections from div structure
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(content, 'text/html');
+    
+    const techniqueDiv = doc.querySelector('.technique');
+    const findingsDiv = doc.querySelector('.findings');
+    const conclusionDiv = doc.querySelector('.conclusion');
+
+    return {
+      technique: techniqueDiv ? techniqueDiv.innerHTML : '',
+      findings: findingsDiv ? findingsDiv.innerHTML : content,
+      conclusion: conclusionDiv ? conclusionDiv.innerHTML : ''
+    };
+  };
+
+  // Combine sections into single content for storage
+  const combineReportSections = (data) => {
+    return `<div class="technique">${data.technique}</div><div class="findings">${data.findings}</div><div class="conclusion">${data.conclusion}</div>`;
   };
 
   const calculateAge = (birthDate) => {
@@ -85,20 +157,41 @@ export default function ReportingPage({ params }) {
     return age;
   };
 
-  const handleDetachViewer = () => {
-    const ohifUrl = `https://pacs.58wilaya.com/ohif/viewer?StudyInstanceUIDs=${studyUid}`;
-    const newWindow = window.open(
-      ohifUrl,
-      'OHIF_Viewer',
-      'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no'
-    );
-    
-    if (newWindow) {
-      setDetachedWindow(newWindow);
-      setViewerDetached(true);
-      toast.success('Viewer opened in new window. Drag to second monitor.');
-    } else {
-      toast.error('Failed to open viewer. Please allow popups.');
+  const handleDetachViewer = async () => {
+    try {
+      // Get Orthanc credentials
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+      const token = localStorage.getItem('token');
+      
+      const response = await fetch(`${apiUrl}/settings/orthanc-credentials`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch credentials');
+      }
+
+      const credentials = await response.json();
+      const ohifUrl = `${credentials.url}/ohif/viewer?StudyInstanceUIDs=${studyUid}`;
+      
+      const newWindow = window.open(
+        ohifUrl,
+        'OHIF_Viewer',
+        'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no'
+      );
+      
+      if (newWindow) {
+        setDetachedWindow(newWindow);
+        setViewerMode('detached');
+        toast.success('Viewer opened in new window. Drag to second monitor.');
+      } else {
+        toast.error('Failed to open viewer. Please allow popups.');
+      }
+    } catch (error) {
+      console.error('Detach viewer error:', error);
+      toast.error('Failed to open viewer');
     }
   };
 
@@ -107,11 +200,17 @@ export default function ReportingPage({ params }) {
       detachedWindow.close();
     }
     setDetachedWindow(null);
-    setViewerDetached(false);
+    setViewerMode('split');
+  };
+
+  const toggleViewerMode = () => {
+    setViewerMode(viewerMode === 'split' ? 'hidden' : 'split');
   };
 
   const handleSaveReport = async () => {
-    if (!reportContent.trim()) {
+    const combinedContent = combineReportSections(reportData);
+    
+    if (!combinedContent.trim() || combinedContent === '<div class="technique"></div><div class="findings"></div><div class="conclusion"></div>') {
       toast.error('Report content cannot be empty');
       return;
     }
@@ -121,24 +220,23 @@ export default function ReportingPage({ params }) {
 
       if (existingReport && existingReport._id) {
         // Update existing report
-        const response = await reportsAPI.update(existingReport._id, {
-          content: reportContent,
+        await reportsAPI.update(existingReport._id, {
+          content: combinedContent,
           status: 'DRAFT'
         });
         toast.success('Report updated successfully');
       } else {
         // Create new report
         const response = await reportsAPI.create({
-          studyInstanceUid: study.studyInstanceUID,
+          studyInstanceUid: study.studyInstanceUid,
           patientName: study.patientName,
           patientId: study.patientId,
           studyDescription: study.studyDescription,
           studyDate: study.studyDate,
           modality: study.modality,
-          content: reportContent,
+          content: combinedContent,
           status: 'DRAFT'
         });
-        // Update the existing report with the newly created one
         if (response.data && response.data.report) {
           setExistingReport(response.data.report);
         }
@@ -153,7 +251,9 @@ export default function ReportingPage({ params }) {
   };
 
   const handleFinalizeReport = async () => {
-    if (!reportContent.trim()) {
+    const combinedContent = combineReportSections(reportData);
+    
+    if (!combinedContent.trim() || combinedContent === '<div class="technique"></div><div class="findings"></div><div class="conclusion"></div>') {
       toast.error('Report content cannot be empty');
       return;
     }
@@ -163,7 +263,7 @@ export default function ReportingPage({ params }) {
 
       if (existingReport && existingReport._id) {
         await reportsAPI.update(existingReport._id, {
-          content: reportContent,
+          content: combinedContent,
           status: 'FINAL'
         });
       } else {
@@ -174,7 +274,7 @@ export default function ReportingPage({ params }) {
           studyDescription: study.studyDescription,
           studyDate: study.studyDate,
           modality: study.modality,
-          content: reportContent,
+          content: combinedContent,
           status: 'FINAL'
         });
       }
@@ -190,7 +290,9 @@ export default function ReportingPage({ params }) {
   };
 
   const handleExportWord = async () => {
-    if (!reportContent.trim()) {
+    const combinedContent = combineReportSections(reportData);
+    
+    if (!combinedContent.trim()) {
       toast.error('Report content is empty');
       return;
     }
@@ -206,7 +308,7 @@ export default function ReportingPage({ params }) {
       const settings = await settingsResponse.json();
 
       await exportToWord(
-        reportContent,
+        combinedContent,
         study.patientName,
         study.patientId,
         study.studyDescription,
@@ -215,6 +317,7 @@ export default function ReportingPage({ params }) {
         settings.FOOTER_TEXT || settings.footerText || ''
       );
       toast.success('Word document exported successfully');
+      setShowExportMenu(false);
     } catch (error) {
       console.error('Export error:', error);
       toast.error(`Failed to export Word document: ${error.message}`);
@@ -222,7 +325,9 @@ export default function ReportingPage({ params }) {
   };
 
   const handleExportPDF = async () => {
-    if (!reportContent.trim()) {
+    const combinedContent = combineReportSections(reportData);
+    
+    if (!combinedContent.trim()) {
       toast.error('Report content is empty');
       return;
     }
@@ -238,7 +343,7 @@ export default function ReportingPage({ params }) {
       const settings = await settingsResponse.json();
 
       await exportToPDF(
-        reportContent,
+        combinedContent,
         study.patientName,
         study.patientId,
         study.studyDescription,
@@ -247,6 +352,7 @@ export default function ReportingPage({ params }) {
         settings.FOOTER_TEXT || settings.footerText || ''
       );
       toast.success('PDF exported successfully');
+      setShowExportMenu(false);
     } catch (error) {
       console.error('Export error:', error);
       toast.error(`Failed to export PDF: ${error.message}`);
@@ -284,76 +390,103 @@ export default function ReportingPage({ params }) {
     <div className="h-screen flex flex-col bg-gray-50">
       {/* Header */}
       <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-3 shadow-lg flex items-center justify-between">
-        <div className="flex items-center space-x-6">
+        <div className="flex items-center space-x-4">
           <div>
             <h1 className="text-lg font-bold">{study.patientName}</h1>
             <p className="text-sm text-blue-100">
-              ID: {study.patientId || 'N/A'} • Age: {calculateAge(study.patientBirthDate)} • {study.studyDescription}
+              ID: {study.patientId || 'N/A'} • Âge: {calculateAge(study.patientBirthDate)} • {study.studyDescription}
             </p>
+          </div>
+          
+          {/* Viewer Mode Buttons */}
+          <div className="flex items-center space-x-2 border-l border-blue-500 pl-4">
+            <button
+              onClick={toggleViewerMode}
+              className={`p-2 rounded hover:bg-blue-600 transition-colors ${viewerMode === 'split' ? 'bg-blue-800' : 'bg-blue-700'}`}
+              title={viewerMode === 'split' ? 'Masquer le visualiseur' : 'Afficher la vue partagée'}
+            >
+              <LayoutGrid size={18} />
+            </button>
+            
+            {viewerMode !== 'detached' ? (
+              <button
+                onClick={handleDetachViewer}
+                className="p-2 rounded hover:bg-blue-600 transition-colors bg-blue-700"
+                title="Détacher le visualiseur (Nouvelle fenêtre)"
+              >
+                <Monitor size={18} />
+              </button>
+            ) : (
+              <button
+                onClick={handleReattachViewer}
+                className="p-2 rounded bg-blue-800 hover:bg-blue-900 transition-colors"
+                title="Fermer le visualiseur externe"
+              >
+                <X size={18} />
+              </button>
+            )}
           </div>
         </div>
 
         <div className="flex items-center space-x-3">
-          {!viewerDetached ? (
+          {/* Export Dropdown - VIEWER can export but not save */}
+          <div className="relative">
             <button
-              onClick={handleDetachViewer}
-              className="flex items-center space-x-2 px-4 py-2 bg-white text-blue-700 rounded-lg hover:bg-blue-50 transition-colors font-medium shadow"
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              disabled={!reportData.findings.trim() && !reportData.technique.trim() && !reportData.conclusion.trim()}
+              className="flex items-center space-x-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium shadow disabled:opacity-50"
             >
-              <Monitor size={18} />
-              <span>Detach Viewer</span>
+              <Download size={18} />
+              <span>Exporter</span>
+              <ChevronDown size={16} />
             </button>
-          ) : (
-            <button
-              onClick={handleReattachViewer}
-              className="flex items-center space-x-2 px-4 py-2 bg-blue-800 text-white rounded-lg hover:bg-blue-900 transition-colors font-medium"
-            >
-              <X size={18} />
-              <span>Close External Viewer</span>
-            </button>
+            
+            {showExportMenu && (
+              <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl z-50 py-1">
+                <button
+                  onClick={handleExportWord}
+                  className="w-full px-4 py-2 text-left text-gray-700 hover:bg-blue-50 flex items-center space-x-2"
+                >
+                  <FileText size={16} />
+                  <span>Exporter en Word</span>
+                </button>
+                <button
+                  onClick={handleExportPDF}
+                  className="w-full px-4 py-2 text-left text-gray-700 hover:bg-blue-50 flex items-center space-x-2"
+                >
+                  <Download size={16} />
+                  <span>Exporter en PDF</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Save and Finalize - Only for RADIOLOGIST and ADMIN */}
+          {currentUser?.role !== 'VIEWER' && (
+            <>
+              <button
+                onClick={handleSaveReport}
+                disabled={saving}
+                className="flex items-center space-x-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-medium shadow disabled:opacity-50"
+              >
+                <Save size={18} />
+                <span>{saving ? 'Enregistrement...' : 'Enregistrer le brouillon'}</span>
+              </button>
+
+              <button
+                onClick={handleFinalizeReport}
+                disabled={saving}
+                className="flex items-center space-x-2 px-4 py-2 bg-white text-blue-700 rounded-lg hover:bg-blue-50 transition-colors font-bold shadow disabled:opacity-50"
+              >
+                <span>{saving ? 'Traitement...' : 'Finaliser le rapport'}</span>
+              </button>
+            </>
           )}
-
-          {/* Export Buttons */}
-          <button
-            onClick={handleExportWord}
-            disabled={!reportContent.trim()}
-            className="flex items-center space-x-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium shadow disabled:opacity-50"
-            title="Export to Word"
-          >
-            <FileText size={18} />
-            <span className="hidden md:inline">Word</span>
-          </button>
-
-          <button
-            onClick={handleExportPDF}
-            disabled={!reportContent.trim()}
-            className="flex items-center space-x-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-medium shadow disabled:opacity-50"
-            title="Export to PDF"
-          >
-            <Download size={18} />
-            <span className="hidden md:inline">PDF</span>
-          </button>
-
-          <button
-            onClick={handleSaveReport}
-            disabled={saving}
-            className="flex items-center space-x-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-medium shadow disabled:opacity-50"
-          >
-            <Save size={18} />
-            <span>{saving ? 'Saving...' : 'Save Draft'}</span>
-          </button>
-
-          <button
-            onClick={handleFinalizeReport}
-            disabled={saving}
-            className="flex items-center space-x-2 px-4 py-2 bg-white text-blue-700 rounded-lg hover:bg-blue-50 transition-colors font-bold shadow disabled:opacity-50"
-          >
-            <span>{saving ? 'Processing...' : 'Finalize Report'}</span>
-          </button>
 
           <button
             onClick={() => router.push('/dashboard')}
             className="p-2 hover:bg-blue-800 rounded-lg transition-colors"
-            title="Close"
+            title="Fermer"
           >
             <X size={20} />
           </button>
@@ -362,25 +495,11 @@ export default function ReportingPage({ params }) {
 
       {/* Split Panel Layout */}
       <div className="flex-1 overflow-hidden">
-        {viewerDetached ? (
-          // Full-width editor when viewer is detached
-          <ReportEditor
-            initialContent={reportContent}
-            onChange={setReportContent}
-          />
-        ) : (
-          // Split-screen layout
+        {viewerMode === 'split' ? (
           <PanelGroup direction="horizontal">
             {/* Left Panel - OHIF Viewer */}
             <Panel defaultSize={50} minSize={30}>
-              <div className="h-full bg-black">
-                <iframe
-                  src={`https://pacs.58wilaya.com/ohif/viewer?StudyInstanceUIDs=${studyUid}`}
-                  className="w-full h-full border-0"
-                  allow="fullscreen"
-                  title="OHIF Viewer"
-                />
-              </div>
+              <OHIFViewer studyUid={studyUid} />
             </Panel>
 
             {/* Resize Handle */}
@@ -388,12 +507,25 @@ export default function ReportingPage({ params }) {
 
             {/* Right Panel - Report Editor */}
             <Panel defaultSize={50} minSize={30}>
-              <ReportEditor
-                initialContent={reportContent}
-                onChange={setReportContent}
+              <ReportEditorV2
+                initialTechnique={reportData.technique}
+                initialFindings={reportData.findings}
+                initialConclusion={reportData.conclusion}
+                onChange={setReportData}
+                readOnly={currentUser?.role === 'VIEWER'}
+                onTemplateApply={handleApplyTemplate}
               />
             </Panel>
           </PanelGroup>
+        ) : (
+          <ReportEditorV2
+            initialTechnique={reportData.technique}
+            initialFindings={reportData.findings}
+            initialConclusion={reportData.conclusion}
+            onChange={setReportData}
+            readOnly={currentUser?.role === 'VIEWER'}
+            onTemplateApply={handleApplyTemplate}
+          />
         )}
       </div>
     </div>

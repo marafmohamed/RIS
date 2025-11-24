@@ -3,8 +3,12 @@
 import { 
   Bold, Italic, Underline, List, ListOrdered, 
   Heading1, Heading2, Table, Plus, Minus,
-  AlignLeft, AlignCenter, AlignRight, AlignJustify
+  AlignLeft, AlignCenter, AlignRight, AlignJustify,
+  FileText
 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { templatesAPI } from '@/lib/api';
+import { toast } from 'sonner';
 
 const MEDICAL_TEMPLATES = {
   chestXRayNormal: {
@@ -59,7 +63,37 @@ const MEDICAL_TEMPLATES = {
   }
 };
 
-export default function EditorToolbar({ editor }) {
+export default function EditorToolbar({ editor, onTemplateApply }) {
+  const [templates, setTemplates] = useState([]);
+  const [showTemplateDropdown, setShowTemplateDropdown] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [templateSearch, setTemplateSearch] = useState('');
+
+  useEffect(() => {
+    loadTemplates();
+  }, []);
+
+  const loadTemplates = async () => {
+    try {
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      setCurrentUser(user);
+      
+      if (user.role !== 'VIEWER') {
+        const response = await templatesAPI.getAll();
+        // Backend now returns user's own templates + default templates
+        setTemplates(response.data);
+      }
+    } catch (error) {
+      console.error('Failed to load templates:', error);
+    }
+  };
+
+  // Filter templates based on search
+  const filteredTemplates = templates.filter(template =>
+    template.name.toLowerCase().includes(templateSearch.toLowerCase()) ||
+    (template.modality && template.modality.toLowerCase().includes(templateSearch.toLowerCase()))
+  );
+
   if (!editor) {
     return null;
   }
@@ -83,6 +117,30 @@ export default function EditorToolbar({ editor }) {
     }
   };
 
+  const applyCustomTemplate = async (template) => {
+    try {
+      if (onTemplateApply) {
+        // Call parent component's handler to apply to all three sections
+        await onTemplateApply(template);
+        setShowTemplateDropdown(false);
+        setTemplateSearch('');
+        toast.success(`Template "${template.name}" applied`);
+      }
+    } catch (error) {
+      console.error('Failed to apply template:', error);
+      toast.error('Failed to apply template');
+    }
+  };
+
+  // Extract plain text preview from HTML
+  const getTextPreview = (html) => {
+    if (!html || typeof document === 'undefined') return '';
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    const text = div.textContent || div.innerText || '';
+    return text.substring(0, 60) + (text.length > 60 ? '...' : '');
+  };
+
   const ToolbarButton = ({ onClick, active, disabled, children, title }) => (
     <button
       onMouseDown={(e) => {
@@ -103,7 +161,69 @@ export default function EditorToolbar({ editor }) {
 
   return (
     <div className="bg-white border-b border-gray-300 px-4 py-2 flex flex-wrap items-center gap-1 sticky top-0 z-10 shadow-sm">
-      {/* Templates Dropdown */}
+      {/* Custom Templates Dropdown */}
+      {templates.length > 0 && (
+        <div className="relative mr-2">
+          <button
+            onClick={() => setShowTemplateDropdown(!showTemplateDropdown)}
+            className="flex items-center gap-2 px-3 py-1.5 border border-blue-500 bg-blue-50 text-blue-700 rounded text-sm font-medium hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+          >
+            <FileText size={16} />
+            <span>Modèles</span>
+            <span className="text-xs bg-blue-200 px-1.5 py-0.5 rounded-full">{templates.length}</span>
+          </button>
+          
+          {showTemplateDropdown && (
+            <div 
+              className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-300 rounded-lg shadow-xl max-h-96 overflow-hidden z-50"
+              onMouseDown={(e) => e.preventDefault()}
+            >
+              {/* Search Input */}
+              <div className="p-2 border-b border-gray-200 sticky top-0 bg-white">
+                <input
+                  type="text"
+                  placeholder="Rechercher des modèles..."
+                  value={templateSearch}
+                  onChange={(e) => setTemplateSearch(e.target.value)}
+                  className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              
+              {/* Templates List */}
+              <div className="overflow-y-auto max-h-80">
+                {filteredTemplates.length === 0 ? (
+                  <div className="p-4 text-center text-gray-500 text-sm">
+                    Aucun modèle trouvé
+                  </div>
+                ) : (
+                  filteredTemplates.map((template) => (
+                    <button
+                      key={template._id}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => applyCustomTemplate(template)}
+                      className="w-full px-3 py-2 text-left hover:bg-blue-50 border-b border-gray-100 last:border-b-0 transition-colors"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-gray-900 text-sm truncate flex-1">{template.name}</span>
+                        {template.isDefault && (
+                          <span className="text-yellow-500 text-xs ml-2">★</span>
+                        )}
+                      </div>
+                      {template.modality && (
+                        <span className="inline-block text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded mt-1">
+                          {template.modality}
+                        </span>
+                      )}
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Legacy Templates Dropdown */}
       <div className="mr-2">
         <select
           onChange={(e) => {
@@ -115,7 +235,7 @@ export default function EditorToolbar({ editor }) {
           className="px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           defaultValue=""
         >
-          <option value="" disabled>Insert Template...</option>
+          <option value="" disabled>Modèles rapides...</option>
           {Object.entries(MEDICAL_TEMPLATES).map(([key, template]) => (
             <option key={key} value={key}>{template.label}</option>
           ))}

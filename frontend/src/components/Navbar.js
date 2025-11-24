@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { FiHome, FiUsers, FiFileText, FiLogOut, FiMenu, FiSettings } from 'react-icons/fi';
+import { FiHome, FiUsers, FiFileText, FiLogOut, FiMenu, FiSettings, FiUser } from 'react-icons/fi';
 import { useState } from 'react';
 
 export default function Navbar() {
@@ -12,13 +12,14 @@ export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navItems = [
-    { href: '/dashboard', label: 'Worklist', icon: FiHome },
-    { href: '/dashboard/reports', label: user?.role === 'ADMIN' ? 'Reports' : 'My Reports', icon: FiFileText },
+    { href: '/dashboard', label: 'Liste de travail', icon: FiHome },
+    { href: '/dashboard/reports', label: user?.role === 'ADMIN' ? 'Rapports' : 'Mes Rapports', icon: FiFileText },
+    { href: '/dashboard/profile', label: 'Profil', icon: FiUser },
   ];
 
   if (user?.role === 'ADMIN') {
-    navItems.push({ href: '/dashboard/users', label: 'Users', icon: FiUsers });
-    navItems.push({ href: '/dashboard/settings', label: 'Settings', icon: FiSettings });
+    navItems.push({ href: '/dashboard/users', label: 'Utilisateurs', icon: FiUsers });
+    navItems.push({ href: '/dashboard/settings', label: 'Paramètres', icon: FiSettings });
   }
 
   return (
@@ -69,7 +70,7 @@ export default function Navbar() {
                 className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-gray-700 bg-gray-100 hover:bg-gray-200"
               >
                 <FiLogOut className="mr-2" />
-                Logout
+                Déconnexion
               </button>
             </div>
 

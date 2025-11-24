@@ -42,6 +42,7 @@ api.interceptors.response.use(
 export const authAPI = {
   login: (credentials) => api.post('/auth/login', credentials),
   getCurrentUser: () => api.get('/auth/me'),
+  updateProfile: (data) => api.put('/auth/profile', data),
   changePassword: (data) => api.post('/auth/change-password', data),
 };
 
@@ -68,6 +69,16 @@ export const reportsAPI = {
   update: (id, reportData) => api.put(`/reports/${id}`, reportData),
   delete: (id) => api.delete(`/reports/${id}`),
   getStats: () => api.get('/reports/stats/overview'),
+};
+
+// Templates API
+export const templatesAPI = {
+  getAll: (params) => api.get('/templates', { params }),
+  getById: (id) => api.get(`/templates/${id}`),
+  create: (templateData) => api.post('/templates', templateData),
+  update: (id, templateData) => api.put(`/templates/${id}`, templateData),
+  delete: (id) => api.delete(`/templates/${id}`),
+  incrementUsage: (id) => api.post(`/templates/${id}/use`),
 };
 
 export default api;

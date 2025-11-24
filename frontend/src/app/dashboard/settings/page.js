@@ -126,8 +126,8 @@ export default function SettingsPage() {
               <div className="flex items-center space-x-3">
                 <FiSettings className="w-8 h-8 text-blue-600" />
                 <div>
-                  <h1 className="text-2xl font-bold text-gray-900">Report Settings</h1>
-                  <p className="text-sm text-gray-600">Configure hospital information for exported reports</p>
+                  <h1 className="text-2xl font-bold text-gray-900">Paramètres de rapport</h1>
+                  <p className="text-sm text-gray-600">Configurez les informations de l'hôpital pour les rapports exportés</p>
                 </div>
               </div>
               <button
@@ -136,19 +136,19 @@ export default function SettingsPage() {
                 className="btn btn-primary"
               >
                 <FiSave className="inline mr-2" />
-                {saving ? 'Saving...' : 'Save Changes'}
+                {saving ? 'Enregistrement...' : 'Enregistrer les modifications'}
               </button>
             </div>
           </div>
 
           {/* Settings Form */}
           <div className="bg-white rounded-lg shadow-sm p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-6">Header & Footer Configuration</h2>
+            <h2 className="text-lg font-semibold text-gray-900 mb-6">Configuration en-tête et pied de page</h2>
 
             {/* Hospital Name */}
             <div className="mb-6">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Hospital Name
+                Nom de l'hôpital
                 <span className="text-red-500 ml-1">*</span>
               </label>
               <input
@@ -156,17 +156,17 @@ export default function SettingsPage() {
                 value={settings.HOSPITAL_NAME}
                 onChange={(e) => setSettings({ ...settings, HOSPITAL_NAME: e.target.value })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="e.g., l'EPH MAZOUNA"
+                placeholder="ex. l'EPH MAZOUNA"
               />
               <p className="mt-1 text-sm text-gray-500">
-                This will appear in the report header: &ldquo;Examen réalisé au niveau de [Hospital Name]&ldquo;
+                S'affichera dans l'en-tête du rapport : « Examen réalisé au niveau de [Nom de l'hôpital] »
               </p>
             </div>
 
             {/* Footer Text */}
             <div className="mb-6">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Footer Text (Bilingual - French/Arabic)
+                Texte du pied de page (Bilingue - Français/Arabe)
                 <span className="text-red-500 ml-1">*</span>
               </label>
               <textarea
@@ -174,31 +174,31 @@ export default function SettingsPage() {
                 onChange={(e) => setSettings({ ...settings, FOOTER_TEXT: e.target.value })}
                 rows={4}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
-                placeholder="e.g., Address   Tel   العنوان"
+                placeholder="ex. Adresse   Tel   العنوان"
               />
               <p className="mt-1 text-sm text-gray-500">
-                This appears at the bottom of all exported reports. Include address, phone, and Arabic translation.
+                Apparait en bas de tous les rapports exportés. Inclure l'adresse, le téléphone et la traduction en arabe.
               </p>
             </div>
 
             {/* Preview */}
             <div className="mt-8 border-t pt-6">
-              <h3 className="text-md font-semibold text-gray-900 mb-4">Preview</h3>
+              <h3 className="text-md font-semibold text-gray-900 mb-4">Aperçu</h3>
               
               {/* Header Preview */}
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 mb-4 border-2 border-blue-200">
                 <p className="text-lg font-bold text-center text-blue-900 mb-1">
-                  INTERPRETATION DE TDM CEREBRALE
+                  INTERPRÉTATION DE LA TDM CÉRÉBRALE
                 </p>
                 <p className="text-sm text-center font-semibold text-blue-800">
-                  Examen réalisé au niveau de {settings.HOSPITAL_NAME || '[Hospital Name]'}
+                  Examen réalisé au niveau de {settings.HOSPITAL_NAME || "[Nom de l'hôpital]"}
                 </p>
               </div>
 
               {/* Footer Preview */}
               <div className="bg-gray-100 rounded-lg p-4 border-t-2 border-gray-400">
                 <p className="text-xs text-center text-gray-600" style={{ direction: 'ltr' }}>
-                  {settings.FOOTER_TEXT || '[Footer Text]'}
+                  {settings.FOOTER_TEXT || '[Texte du pied de page]'}
                 </p>
               </div>
             </div>
@@ -206,12 +206,12 @@ export default function SettingsPage() {
 
           {/* Info Box */}
           <div className="mt-6 bg-blue-50 rounded-lg p-4">
-            <h3 className="font-medium text-blue-900 mb-2">ℹ️ Important Notes:</h3>
+            <h3 className="font-medium text-blue-900 mb-2">ℹ️ Notes importantes :</h3>
             <ul className="text-sm text-blue-800 space-y-1">
-              <li>• These settings apply to all Word and PDF exports</li>
-              <li>• Changes take effect immediately for new exports</li>
-              <li>• Existing reports will not be modified</li>
-              <li>• Only administrators can modify these settings</li>
+              <li>• Ces paramètres s'appliquent à toutes les exportations Word et PDF</li>
+              <li>• Les modifications prennent effet immédiatement pour les nouveaux exports</li>
+              <li>• Les rapports existants ne seront pas modifiés</li>
+              <li>• Seuls les administrateurs peuvent modifier ces paramètres</li>
             </ul>
           </div>
         </div>

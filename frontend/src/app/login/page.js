@@ -18,11 +18,11 @@ export default function LoginPage() {
 
     try {
       await login(email, password);
-      toast.success('Login successful');
+      toast.success('Connexion réussie');
       router.push('/dashboard');
     } catch (error) {
       console.error('Login error:', error);
-      toast.error(error.response?.data?.error || 'Login failed');
+      toast.error(error.response?.data?.error || 'Échec de la connexion');
     } finally {
       setLoading(false);
     }
@@ -38,14 +38,14 @@ export default function LoginPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
             </div>
-            <h1 className="text-3xl font-bold text-gray-900">RIS Login</h1>
-            <p className="text-gray-600 mt-2">Radiology Information System</p>
+            <h1 className="text-3xl font-bold text-gray-900">Connexion RIS</h1>
+            <p className="text-gray-600 mt-2">Système d'Information Radiologique</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                Email Address
+                Adresse Email
               </label>
               <input
                 id="email"
@@ -53,7 +53,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="input"
-                placeholder="your.email@example.com"
+                placeholder="votre.email@exemple.com"
                 required
                 autoFocus
               />
@@ -61,7 +61,7 @@ export default function LoginPage() {
 
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-                Password
+                Mot de Passe
               </label>
               <input
                 id="password"
@@ -85,18 +85,18 @@ export default function LoginPage() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  Signing in...
+                  Connexion en cours...
                 </span>
               ) : (
-                'Sign In'
+                'Se Connecter'
               )}
             </button>
           </form>
         </div>
 
         <div className="mt-6 text-center text-sm text-gray-600">
-          <p>Integrated with Orthanc PACS</p>
-          <p className="mt-1">© 2025 RIS - All rights reserved</p>
+          <p>Intégré avec Orthanc PACS</p>
+          <p className="mt-1">© 2025 RIS - Tous droits réservés</p>
         </div>
       </div>
     </div>

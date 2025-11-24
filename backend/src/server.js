@@ -10,6 +10,7 @@ const reportRoutes = require('./routes/reports');
 const proxyRoutes = require('./routes/proxy');
 const dicomImagesRoutes = require('./routes/dicomImages');
 const settingsRoutes = require('./routes/settings');
+const templateRoutes = require('./routes/templates');
 
 const app = express();
 
@@ -39,6 +40,16 @@ mongoose.connect(process.env.MONGODB_URI, {
 .then(() => {
   console.log('✅ Connected to MongoDB');
   seedDefaultAdmin();
+  const PORT = process.env.PORT || 5000;
+
+// Only listen if we are running locally (not on Vercel)
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => {
+    console.log(`🚀 RIS Backend server running on port ${PORT}`);
+    console.log(`📍 Environment: ${process.env.NODE_ENV}`);
+    console.log(`🔗 Frontend URL: ${process.env.FRONTEND_URL}`);
+  });
+}
 })
 .catch((err) => {
   console.error('❌ MongoDB connection error:', err);
@@ -75,6 +86,7 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/proxy', proxyRoutes);
 app.use('/api/proxy', dicomImagesRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/templates', templateRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
@@ -103,16 +115,6 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-const PORT = process.env.PORT || 5000;
-
-// Only listen if we are running locally (not on Vercel)
-if (process.env.NODE_ENV !== 'production') {
-  app.listen(PORT, () => {
-    console.log(`🚀 RIS Backend server running on port ${PORT}`);
-    console.log(`📍 Environment: ${process.env.NODE_ENV}`);
-    console.log(`🔗 Frontend URL: ${process.env.FRONTEND_URL}`);
-  });
-}
 
 // Export the app for Vercel Serverless
 module.exports = app;

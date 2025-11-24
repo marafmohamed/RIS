@@ -13,8 +13,6 @@ const ORTHANC_AUTH =
   Buffer.from(
     `${process.env.ORTHANC_USERNAME}:${process.env.ORTHANC_PASSWORD}`
   ).toString("base64");
-console.log("ORTHANC_URL:", ORTHANC_URL);
-console.log("ORTHANC_AUTH:", ORTHANC_AUTH,process.env.OPTHANC_USERNAME,process.env.ORTHANC_PASSWORD);
 // In-memory cache for study metadata (expires after 10 minutes)
 const studyCache = new Map();
 const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes

@@ -218,6 +218,16 @@ export const downloadWordReport = async (reportData, settings = {}) => {
 
         new Paragraph({ text: "", spacing: { after: 400 } }), // Spacer
 
+        // TECHNIQUE (if provided)
+        ...(reportData.technique ? [
+          new Paragraph({
+            children: [new TextRun({ text: "TECHNIQUE:", bold: true, size: 24 })],
+            spacing: { before: 200, after: 100 }
+          }),
+          ...parseHtmlToDocxParagraphs(reportData.technique || ''),
+          new Paragraph({ text: "", spacing: { after: 300 } })
+        ] : []),
+
         // Insert findings content (parsed from rich text editor)
         // User creates their own section titles within the rich text editor
         ...parseHtmlToDocxParagraphs(findings || reportContent || ''),
@@ -266,7 +276,7 @@ export const downloadWordReport = async (reportData, settings = {}) => {
  * Handles formatting: bold, italic, headings, lists, line breaks, text alignment
  */
 function parseHtmlToDocxParagraphs(htmlContent) {
-  if (!htmlContent) return [
+  if (!htmlContent || !htmlContent.trim()) return [
     new Paragraph({
       children: [new TextRun({ text: "[Contenu du rapport à remplir]", italics: true, size: 22 })],
       spacing: { after: 150 }
@@ -507,31 +517,17 @@ function parseConclusionToDocxParagraphs(conclusion) {
     return [
       new Paragraph({ 
         children: [new TextRun({ 
-          text: "LECTURE SUR CD D'UNE IMAGERIE SANS PARTICULARITÉS SIGNIFICATIVES NOTABLES.",
-          bold: true,
-          italics: true,
+          text: "",
           size: 22
         })],
-        alignment: AlignmentType.CENTER,
         spacing: { before: 100, after: 150 }
       })
     ];
   }
 
-  const lines = conclusion.split('\n').filter(line => line.trim());
-  
-  return lines.map(line => 
-    new Paragraph({ 
-      children: [new TextRun({ 
-        text: line.trim(),
-        bold: true,
-        italics: true,
-        size: 22
-      })],
-      alignment: AlignmentType.CENTER,
-      spacing: { before: 50, after: 50 }
-    })
-  );
+  // Parse HTML conclusion and extract text properly
+  // Use the same parser as findings/technique to preserve all styles
+  return parseHtmlToDocxParagraphs(conclusion);
 }
 
 /**
@@ -546,6 +542,18 @@ export const exportToWord = async (
   hospitalName,
   footerText
 ) => {
+  // Parse sections from combined content
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(reportContent, 'text/html');
+  
+  const techniqueDiv = doc.querySelector('.technique');
+  const findingsDiv = doc.querySelector('.findings');
+  const conclusionDiv = doc.querySelector('.conclusion');
+
+  const techniqueContent = techniqueDiv ? techniqueDiv.innerHTML : '';
+  const findingsContent = findingsDiv ? findingsDiv.innerHTML : reportContent;
+  const conclusionContent = conclusionDiv ? conclusionDiv.innerHTML : '';
+
   const reportData = {
     patientName,
     patientId: patientID,
@@ -553,9 +561,10 @@ export const exportToWord = async (
     studyDescription,
     studyDate,
     modality: '',
-    reportContent,
-    findings: reportContent,
-    conclusion: '',
+    reportContent: findingsContent,
+    findings: findingsContent,
+    technique: techniqueContent,
+    conclusion: conclusionContent,
     doctorName: ''
   };
 

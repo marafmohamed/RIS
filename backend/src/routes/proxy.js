@@ -24,7 +24,7 @@ const verifyTokenFromQuery = (req, res, next) => {
 const ORTHANC_URL = process.env.ORTHANC_URL;
 const ORTHANC_AUTH = 'Basic ' + Buffer.from(`${process.env.ORTHANC_USERNAME}:${process.env.ORTHANC_PASSWORD}`).toString('base64');
 
-// Proxy OHIF viewer
+// Simple OHIF proxy - returns HTML that loads OHIF with embedded auth
 router.get('/viewer', verifyTokenFromQuery, async (req, res) => {
   try {
     const studyUid = req.query.StudyInstanceUIDs;
@@ -33,18 +33,38 @@ router.get('/viewer', verifyTokenFromQuery, async (req, res) => {
       return res.status(400).send('StudyInstanceUIDs parameter required');
     }
 
-    // Fetch OHIF viewer HTML from Orthanc
-    const response = await fetch(`${ORTHANC_URL}/ohif/viewer?StudyInstanceUIDs=${studyUid}`, {
-      headers: {
-        'Authorization': ORTHANC_AUTH
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`Orthanc responded with ${response.status}`);
-    }
-
-    const html = await response.text();
+    // Create a simple HTML page that embeds OHIF with authentication
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>OHIF Viewer</title>
+  <style>
+    body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+    iframe { border: 0; width: 100%; height: 100%; }
+  </style>
+</head>
+<body>
+  <iframe id="ohif" src="" allow="fullscreen"></iframe>
+  <script>
+    // Authenticate and load OHIF
+    (async function() {
+      const auth = 'Basic ' + btoa('${process.env.ORTHANC_USERNAME}:${process.env.ORTHANC_PASSWORD}');
+      
+      // Pre-authenticate with Orthanc
+      try {
+        await fetch('${ORTHANC_URL}/studies', {
+          headers: { 'Authorization': auth },
+          credentials: 'include'
+        });
+      } catch(e) { console.error('Pre-auth failed:', e); }
+      
+      // Load OHIF viewer
+      document.getElementById('ohif').src = '${ORTHANC_URL}/ohif/viewer?StudyInstanceUIDs=${studyUid}';
+    })();
+  </script>
+</body>
+</html>`;
     
     // Modify HTML to proxy all Orthanc requests through our backend
     const modifiedHtml = html

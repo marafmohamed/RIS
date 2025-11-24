@@ -68,6 +68,41 @@ router.get('/me', authMiddleware, async (req, res) => {
   res.json({ user: req.user });
 });
 
+// Update profile (name only)
+router.put('/profile', authMiddleware, [
+  body('fullName').notEmpty().trim()
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { fullName } = req.body;
+
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    user.fullName = fullName;
+    await user.save();
+
+    res.json({
+      message: 'Profile updated successfully',
+      user: {
+        _id: user._id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role
+      }
+    });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
 // Change password
 router.post('/change-password', authMiddleware, [
   body('currentPassword').notEmpty(),

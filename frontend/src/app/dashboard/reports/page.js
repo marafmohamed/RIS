@@ -60,7 +60,7 @@ export default function ReportsPage() {
       }
     } catch (error) {
       console.error('Failed to fetch reports:', error);
-      toast.error('Failed to load reports');
+      toast.error('Échec du chargement des rapports');
     } finally {
       setLoading(false);
     }

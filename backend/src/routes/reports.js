@@ -66,6 +66,11 @@ router.post('/', [
   body('studyDate').isISO8601()
 ], async (req, res) => {
   try {
+    // VIEWER role cannot create reports
+    if (req.user.role === 'VIEWER') {
+      return res.status(403).json({ error: 'Viewers cannot create reports' });
+    }
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
@@ -115,6 +120,11 @@ router.post('/', [
 // Update report
 router.put('/:id', async (req, res) => {
   try {
+    // VIEWER role cannot update reports
+    if (req.user.role === 'VIEWER') {
+      return res.status(403).json({ error: 'Viewers cannot modify reports' });
+    }
+
     const { content, status } = req.body;
 
     const report = await Report.findById(req.params.id);
@@ -122,13 +132,17 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Report not found' });
     }
 
-    // Only the author can edit draft reports
-    if (report.status === 'DRAFT' && report.authorId.toString() !== req.user._id.toString()) {
+    // Permission checks
+    const isAuthor = report.authorId.toString() === req.user._id.toString();
+    const isAdmin = req.user.role === 'ADMIN';
+
+    // Only the author or admin can edit draft reports
+    if (report.status === 'DRAFT' && !isAuthor && !isAdmin) {
       return res.status(403).json({ error: 'You can only edit your own draft reports' });
     }
 
     // Final reports can only be edited by admins
-    if (report.status === 'FINAL' && req.user.role !== 'ADMIN') {
+    if (report.status === 'FINAL' && !isAdmin) {
       return res.status(403).json({ error: 'Only admins can edit finalized reports' });
     }
 

@@ -146,118 +146,118 @@ export default function UsersPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8 flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">User Management</h1>
-            <p className="mt-2 text-gray-600">Manage system users and their roles</p>
+            <h1 className="text-3xl font-bold text-gray-900">Gestion des utilisateurs</h1>
+            <p className="mt-2 text-gray-600">Gérez les utilisateurs du système et leurs rôles</p>
           </div>
           <button
             onClick={() => {
               resetForm();
-              setShowModal(true);
-            }}
-            className="btn btn-primary"
-          >
-            <FiPlus className="inline mr-2" />
-            Add User
-          </button>
-        </div>
+                setShowModal(true);
+              }}
+              className="btn btn-primary"
+              >
+              <FiPlus className="inline mr-2" />
+              Ajouter un utilisateur
+              </button>
+            </div>
 
-        {/* Users Table */}
-        <div className="card overflow-hidden">
-          {loading ? (
-            <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-              <p className="mt-4 text-gray-600">Loading users...</p>
-            </div>
-          ) : filteredUsers.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-gray-500">
-                {searchTerm ? `No users found matching "${searchTerm}"` : 'No users found'}
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Name
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Email
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Role
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {currentUsers.map((u) => (
-                    <tr key={u._id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">{u.fullName}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-500">{u.email}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          u.role === 'ADMIN' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
-                        }`}>
-                          {u.role}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          u.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                        }`}>
-                          {u.isActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-3">
-                        <button
-                          onClick={() => openEditModal(u)}
-                          className="text-blue-600 hover:text-blue-900"
-                        >
-                          <FiEdit2 className="inline mr-1" />
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleToggleActive(u._id, u.isActive)}
-                          className={u.isActive ? 'text-orange-600 hover:text-orange-900' : 'text-green-600 hover:text-green-900'}
-                        >
-                          {u.isActive ? <FiUserX className="inline mr-1" /> : <FiUserCheck className="inline mr-1" />}
-                          {u.isActive ? 'Deactivate' : 'Activate'}
-                        </button>
-                        {u._id !== user._id && (
-                          <button
-                            onClick={() => handleDelete(u._id)}
-                            className="text-red-600 hover:text-red-900"
-                          >
-                            <FiTrash2 className="inline mr-1" />
-                            Delete
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+            {/* Table des utilisateurs */}
+              <div className="card overflow-hidden">
+              {loading ? (
+                <div className="text-center py-12">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+                <p className="mt-4 text-gray-600">Chargement des utilisateurs...</p>
+                </div>
+              ) : filteredUsers.length === 0 ? (
+                <div className="text-center py-12">
+                <p className="text-gray-500">
+              {searchTerm ? `Aucun utilisateur trouvé correspondant à "${searchTerm}"` : 'Aucun utilisateur trouvé'}
+                </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Nom
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Courriel
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Rôle
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Statut
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {currentUsers.map((u) => (
+                <tr key={u._id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                <div className="text-sm font-medium text-gray-900">{u.fullName}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                <div className="text-sm text-gray-500">{u.email}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                u.role === 'ADMIN' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+                }`}>
+                {u.role === 'ADMIN' ? 'Administrateur' : 'Radiologue'}
+                </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                u.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                }`}>
+                {u.isActive ? 'Actif' : 'Inactif'}
+                </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-3">
+                <button
+                onClick={() => openEditModal(u)}
+                className="text-blue-600 hover:text-blue-900"
+                >
+                <FiEdit2 className="inline mr-1" />
+                Modifier
+                </button>
+                <button
+                onClick={() => handleToggleActive(u._id, u.isActive)}
+                className={u.isActive ? 'text-orange-600 hover:text-orange-900' : 'text-green-600 hover:text-green-900'}
+                >
+                {u.isActive ? <FiUserX className="inline mr-1" /> : <FiUserCheck className="inline mr-1" />}
+                {u.isActive ? 'Désactiver' : 'Activer'}
+                </button>
+                {u._id !== user._id && (
+                <button
+                  onClick={() => handleDelete(u._id)}
+                  className="text-red-600 hover:text-red-900"
+                >
+                  <FiTrash2 className="inline mr-1" />
+                  Supprimer
+                </button>
+                )}
+                  </td>
+                </tr>
+                ))}
+              </tbody>
+                </table>
+                </div>
+              )}
+              </div>
 
-        {/* Pagination */}
+              {/* Pagination */}
         {!loading && filteredUsers.length > 0 && totalPages > 1 && (
           <div className="card mt-4">
             <div className="flex items-center justify-between">
               <div className="text-sm text-gray-700">
-                Showing {indexOfFirstUser + 1} to {Math.min(indexOfLastUser, filteredUsers.length)} of {filteredUsers.length} users
+                Affichage de {indexOfFirstUser + 1} à {Math.min(indexOfLastUser, filteredUsers.length)} sur {filteredUsers.length} utilisateurs
               </div>
               <div className="flex space-x-2">
                 <button
@@ -265,7 +265,7 @@ export default function UsersPage() {
                   disabled={currentPage === 1}
                   className="px-3 py-1 rounded-md border border-gray-300 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Previous
+                  Précédent
                 </button>
                 {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
                   <button
@@ -285,7 +285,7 @@ export default function UsersPage() {
                   disabled={currentPage === totalPages}
                   className="px-3 py-1 rounded-md border border-gray-300 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Next
+                  Suivant
                 </button>
               </div>
             </div>
@@ -293,88 +293,88 @@ export default function UsersPage() {
         )}
 
         <div className="mt-4 text-sm text-gray-600">
-          {searchTerm ? `Found ${filteredUsers.length} of ${users.length} users` : `Total users: ${users.length}`}
+          {searchTerm ? `Trouvé ${filteredUsers.length} sur ${users.length} utilisateurs` : `Total des utilisateurs : ${users.length}`}
         </div>
 
-        {/* Modal */}
-        {showModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-8 max-w-md w-full mx-4">
-              <h2 className="text-2xl font-bold mb-6">
-                {editingUser ? 'Edit User' : 'Create New User'}
-              </h2>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="input"
-                    required
-                    disabled={editingUser}
-                  />
-                </div>
+       { /* Modal */}
+          {showModal && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg p-8 max-w-md w-full mx-4">
+                <h2 className="text-2xl font-bold mb-6">
+            {editingUser ? 'Modifier l’utilisateur' : 'Créer un nouvel utilisateur'}
+                </h2>
+                <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Email
+              </label>
+              <input
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                className="input"
+                required
+                disabled={editingUser}
+              />
+            </div>
 
-                {!editingUser && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Password
-                    </label>
-                    <input
-                      type="password"
-                      value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      className="input"
-                      required={!editingUser}
-                      minLength={6}
-                    />
-                  </div>
-                )}
+            {!editingUser && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Mot de passe
+                </label>
+                <input
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  className="input"
+                  required={!editingUser}
+                  minLength={6}
+                />
+              </div>
+            )}
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Full Name
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.fullName}
-                    onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                    className="input"
-                    required
-                  />
-                </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Nom complet
+              </label>
+              <input
+                type="text"
+                value={formData.fullName}
+                onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
+                className="input"
+                required
+              />
+            </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Role
-                  </label>
-                  <select
-                    value={formData.role}
-                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                    className="input"
-                    required
-                  >
-                    <option value="RADIOLOGIST">Radiologist</option>
-                    <option value="ADMIN">Admin</option>
-                  </select>
-                </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Rôle
+              </label>
+              <select
+                value={formData.role}
+                onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                className="input"
+                required
+              >
+                <option value="RADIOLOGIST">Radiologue</option>
+                <option value="ADMIN">Administrateur</option>
+              </select>
+            </div>
 
-                <div className="flex space-x-3 mt-6">
-                  <button type="submit" className="btn btn-primary flex-1">
-                    {editingUser ? 'Update User' : 'Create User'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
+            <div className="flex space-x-3 mt-6">
+              <button type="submit" className="btn btn-primary flex-1">
+                {editingUser ? 'Mettre à jour' : 'Créer'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
                       setShowModal(false);
                       resetForm();
                     }}
                     className="btn btn-secondary flex-1"
                   >
-                    Cancel
+                    Annuler
                   </button>
                 </div>
               </form>

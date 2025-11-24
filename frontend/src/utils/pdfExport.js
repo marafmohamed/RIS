@@ -92,6 +92,9 @@ const styles = StyleSheet.create({
     fontSize: 9,
     color: '#666666',
     width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    display: 'flex',
   },
   pageNumber: {
     position: 'absolute',
@@ -117,6 +120,7 @@ const ReportPDF = ({ reportData, settings = {} }) => {
     modality,
     findings,
     conclusion,
+    technique
   } = reportData;
 
   const hospitalName = settings.hospitalName || "l'EPH MAZOUNA";
@@ -153,7 +157,7 @@ const ReportPDF = ({ reportData, settings = {} }) => {
 
   // Parse HTML to structured paragraphs with alignment
   const parseHtmlToStructuredContent = (html) => {
-    if (!html) return [];
+    if (!html || !html.trim()) return [];
     
     const paragraphs = [];
     
@@ -169,7 +173,7 @@ const ReportPDF = ({ reportData, settings = {} }) => {
       const children = Array.from(temp.children);
       
       if (children.length === 0) {
-        // Plain text
+        // Plain text - use textContent to strip all HTML tags
         const text = temp.textContent || '';
         if (text.trim()) {
           paragraphs.push({ text: text.trim(), alignment: 'left', isList: false });
@@ -177,7 +181,8 @@ const ReportPDF = ({ reportData, settings = {} }) => {
       } else {
         children.forEach(child => {
           const tagName = child.tagName.toLowerCase();
-          const text = child.textContent.trim();
+          // Use textContent to get pure text without HTML tags
+          const text = child.textContent?.trim() || '';
           const alignment = getAlignment(child);
           
           if (!text) return;
@@ -186,7 +191,7 @@ const ReportPDF = ({ reportData, settings = {} }) => {
             // Bullet list
             const items = Array.from(child.getElementsByTagName('li'));
             items.forEach(li => {
-              const liText = li.textContent.trim();
+              const liText = li.textContent?.trim() || '';
               if (liText) {
                 paragraphs.push({ text: `• ${liText}`, alignment: 'left', isList: true });
               }
@@ -195,12 +200,13 @@ const ReportPDF = ({ reportData, settings = {} }) => {
             // Numbered list
             const items = Array.from(child.getElementsByTagName('li'));
             items.forEach((li, index) => {
-              const liText = li.textContent.trim();
+              const liText = li.textContent?.trim() || '';
               if (liText) {
                 paragraphs.push({ text: `${index + 1}. ${liText}`, alignment: 'left', isList: true });
               }
             });
           } else {
+            // For all other tags, use textContent to strip HTML
             paragraphs.push({ text, alignment, isList: false });
           }
         });
@@ -224,9 +230,12 @@ const ReportPDF = ({ reportData, settings = {} }) => {
   };
 
   const findingsParagraphs = parseHtmlToStructuredContent(findings);
-  const conclusionLines = (conclusion || "LECTURE SUR CD D'UNE IMAGERIE SANS PARTICULARITÉS SIGNIFICATIVES NOTABLES.")
-    .split('\n')
-    .filter(line => line.trim());
+  const techniqueParagraphs = technique ? parseHtmlToStructuredContent(technique) : [];
+  const conclusionParagraphs = conclusion ? parseHtmlToStructuredContent(conclusion) : [];
+  
+  const conclusionText = conclusionParagraphs.length > 0 
+    ? conclusionParagraphs 
+    : [{ text: "", alignment: 'center', isList: false }];
 
   return (
     <Document>
@@ -262,6 +271,25 @@ const ReportPDF = ({ reportData, settings = {} }) => {
           </Text>
         </View>
 
+        {/* Technique Section */}
+        {techniqueParagraphs.length > 0 && (
+          <View style={{ marginBottom: 15 }}>
+            <Text style={styles.sectionTitle}>TECHNIQUE:</Text>
+            {techniqueParagraphs.map((para, index) => (
+              <Text 
+                key={index} 
+                style={{
+                  ...styles.paragraph,
+                  textAlign: para.alignment,
+                  marginLeft: para.isList ? 20 : 0
+                }}
+              >
+                {para.text}
+              </Text>
+            ))}
+          </View>
+        )}
+
         {/* Results - User creates their own section titles */}
         {findingsParagraphs.length > 0 ? (
           findingsParagraphs.map((para, index) => (
@@ -283,9 +311,15 @@ const ReportPDF = ({ reportData, settings = {} }) => {
         {/* Conclusion */}
         <View style={styles.conclusionBox}>
           <Text style={styles.conclusionTitle}>CONCLUSION :</Text>
-          {conclusionLines.map((line, index) => (
-            <Text key={index} style={styles.conclusionText}>
-              {line.trim()}
+          {conclusionText.map((para, index) => (
+            <Text 
+              key={index} 
+              style={{
+                ...styles.conclusionText,
+                textAlign: para.alignment || 'center'
+              }}
+            >
+              {para.text}
             </Text>
           ))}
         </View>
@@ -325,9 +359,6 @@ export const downloadPDFReport = async (reportData, settings = {}) => {
   URL.revokeObjectURL(url);
 };
 
-/**
- * Wrapper function to match the signature used in reporting page
- */
 export const exportToPDF = async (
   reportContent,
   patientName,
@@ -337,6 +368,23 @@ export const exportToPDF = async (
   hospitalName,
   footerText
 ) => {
+  // Parse sections from combined content
+  const parser = typeof document !== 'undefined' ? new DOMParser() : null;
+  let techniqueContent = '';
+  let findingsContent = reportContent;
+  let conclusionContent = '';
+  
+  if (parser) {
+    const doc = parser.parseFromString(reportContent, 'text/html');
+    const techniqueDiv = doc.querySelector('.technique');
+    const findingsDiv = doc.querySelector('.findings');
+    const conclusionDiv = doc.querySelector('.conclusion');
+
+    techniqueContent = techniqueDiv ? techniqueDiv.innerHTML : '';
+    findingsContent = findingsDiv ? findingsDiv.innerHTML : reportContent;
+    conclusionContent = conclusionDiv ? conclusionDiv.innerHTML : '';
+  }
+
   const reportData = {
     patientName,
     patientId: patientID,
@@ -344,8 +392,9 @@ export const exportToPDF = async (
     studyDescription,
     studyDate,
     modality: '',
-    findings: reportContent,
-    conclusion: ''
+    technique: techniqueContent,
+    findings: findingsContent,
+    conclusion: conclusionContent
   };
 
   const settings = {

@@ -31,7 +31,7 @@ export default function DashboardPage() {
       setStudies(response.data);
     } catch (error) {
       console.error('Failed to fetch studies:', error);
-      toast.error('Failed to load studies');
+      toast.error('Échec du chargement des études');
     } finally {
       setLoading(false);
     }
@@ -77,8 +77,8 @@ export default function DashboardPage() {
       <Navbar />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Worklist</h1>
-          <p className="mt-2 text-gray-600">View and report patient studies from PACS</p>
+          <h1 className="text-3xl font-bold text-gray-900">Liste de Travail</h1>
+          <p className="mt-2 text-gray-600">Consulter et rapporter les études des patients depuis le PACS</p>
         </div>
 
         {/* Search Filters */}
@@ -88,26 +88,26 @@ export default function DashboardPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   <FiSearch className="inline mr-1" />
-                  Patient Name
+                  Nom du Patient
                 </label>
                 <input
                   type="text"
                   value={filters.patientName}
                   onChange={(e) => setFilters({ ...filters, patientName: e.target.value })}
-                  placeholder="Search by name..."
+                  placeholder="Rechercher par nom..."
                   className="input"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Patient ID
+                  ID Patient
                 </label>
                 <input
                   type="text"
                   value={filters.patientId}
                   onChange={(e) => setFilters({ ...filters, patientId: e.target.value })}
-                  placeholder="Search by ID..."
+                  placeholder="Rechercher par ID..."
                   className="input"
                 />
               </div>
@@ -115,7 +115,7 @@ export default function DashboardPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   <FiCalendar className="inline mr-1" />
-                  Start Date
+                  Date de Début
                 </label>
                 <input
                   type="date"
@@ -127,7 +127,7 @@ export default function DashboardPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  End Date
+                  Date de Fin
                 </label>
                 <input
                   type="date"
@@ -141,7 +141,7 @@ export default function DashboardPage() {
             <div className="mt-4 flex space-x-3">
               <button type="submit" className="btn btn-primary">
                 <FiFilter className="inline mr-2" />
-                Apply Filters
+                Appliquer les Filtres
               </button>
               <button
                 type="button"
@@ -151,7 +151,7 @@ export default function DashboardPage() {
                 }}
                 className="btn btn-secondary"
               >
-                Clear
+                Effacer
               </button>
             </div>
           </form>
@@ -162,11 +162,11 @@ export default function DashboardPage() {
           {loading ? (
             <div className="text-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-              <p className="mt-4 text-gray-600">Loading studies...</p>
+              <p className="mt-4 text-gray-600">Chargement des études...</p>
             </div>
           ) : studies.length === 0 ? (
             <div className="text-center py-12">
-              <p className="text-gray-500">No studies found</p>
+              <p className="text-gray-500">Aucune étude trouvée</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -174,22 +174,22 @@ export default function DashboardPage() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Patient Name
+                      Nom du Patient
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Patient ID
+                      ID Patient
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Study Date
+                      Date de l'Étude
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Modality
+                      Modalité
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Description
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Status
+                      Statut
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Actions
@@ -219,7 +219,7 @@ export default function DashboardPage() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="text-sm text-gray-500 max-w-xs truncate">
-                          {study.studyDescription || 'No description'}
+                          {study.studyDescription || 'Aucune description'}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -233,7 +233,7 @@ export default function DashboardPage() {
                           className="text-blue-600 hover:text-blue-900"
                         >
                           <FiFileText className="inline mr-1" />
-                          {study.reportStatus === 'UNREPORTED' ? 'Create Report' : 'View Report'}
+                          {study.reportStatus === 'UNREPORTED' ? 'Créer un Rapport' : 'Voir le Rapport'}
                         </Link>
                       </td>
                     </tr>
