@@ -28,7 +28,7 @@ router.get("/", async (req, res) => {
 router.get("/orthanc-credentials", async (req, res) => {
   try {
     console.log("Fetching Orthanc credentials");
-    res.json({
+    res.status(200).json({
       url: process.env.ORTHANC_URL,
       username: process.env.ORTHANC_USERNAME,
       password: process.env.ORTHANC_PASSWORD,
