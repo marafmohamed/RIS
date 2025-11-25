@@ -127,7 +127,7 @@ export default function SettingsPage() {
                 <FiSettings className="w-8 h-8 text-blue-600" />
                 <div>
                   <h1 className="text-2xl font-bold text-gray-900">Paramètres de rapport</h1>
-                  <p className="text-sm text-gray-600">Configurez les informations de l'hôpital pour les rapports exportés</p>
+                  <p className="text-sm text-gray-600">Configurez les informations de l&apos;hôpital pour les rapports exportés</p>
                 </div>
               </div>
               <button
@@ -148,7 +148,7 @@ export default function SettingsPage() {
             {/* Hospital Name */}
             <div className="mb-6">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Nom de l'hôpital
+                Nom de l&apos;hôpital
                 <span className="text-red-500 ml-1">*</span>
               </label>
               <input
@@ -159,7 +159,7 @@ export default function SettingsPage() {
                 placeholder="ex. l'EPH MAZOUNA"
               />
               <p className="mt-1 text-sm text-gray-500">
-                S'affichera dans l'en-tête du rapport : « Examen réalisé au niveau de [Nom de l'hôpital] »
+                S&apos;affichera dans l&apos;en-tête du rapport : « Examen réalisé au niveau de [Nom de l&apos;hôpital] »
               </p>
             </div>
 
@@ -177,7 +177,7 @@ export default function SettingsPage() {
                 placeholder="ex. Adresse   Tel   العنوان"
               />
               <p className="mt-1 text-sm text-gray-500">
-                Apparait en bas de tous les rapports exportés. Inclure l'adresse, le téléphone et la traduction en arabe.
+                Apparait en bas de tous les rapports exportés. Inclure l&apos;adresse, le téléphone et la traduction en arabe.
               </p>
             </div>
 
@@ -208,7 +208,7 @@ export default function SettingsPage() {
           <div className="mt-6 bg-blue-50 rounded-lg p-4">
             <h3 className="font-medium text-blue-900 mb-2">ℹ️ Notes importantes :</h3>
             <ul className="text-sm text-blue-800 space-y-1">
-              <li>• Ces paramètres s'appliquent à toutes les exportations Word et PDF</li>
+              <li>• Ces paramètres s&apos;appliquent à toutes les exportations Word et PDF</li>
               <li>• Les modifications prennent effet immédiatement pour les nouveaux exports</li>
               <li>• Les rapports existants ne seront pas modifiés</li>
               <li>• Seuls les administrateurs peuvent modifier ces paramètres</li>

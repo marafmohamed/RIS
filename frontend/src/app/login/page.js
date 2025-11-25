@@ -39,7 +39,7 @@ export default function LoginPage() {
               </svg>
             </div>
             <h1 className="text-3xl font-bold text-gray-900">Connexion RIS</h1>
-            <p className="text-gray-600 mt-2">Système d'Information Radiologique</p>
+            <p className="text-gray-600 mt-2">Système d&apos;Information Radiologique</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
