@@ -27,7 +27,7 @@ router.post('/', adminOnly, [
   body('email').isEmail().normalizeEmail(),
   body('password').isLength({ min: 6 }),
   body('fullName').notEmpty().trim(),
-  body('role').isIn(['ADMIN', 'RADIOLOGIST'])
+  body('role').isIn(['ADMIN', 'RADIOLOGIST', 'VIEWER', 'REFERRING_PHYSICIAN'])
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -73,7 +73,7 @@ router.post('/', adminOnly, [
 router.put('/:id', adminOnly, async (req, res) => {
   try {
     const { fullName, role, isActive } = req.body;
-    
+
     const user = await User.findById(req.params.id);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });

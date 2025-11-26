@@ -19,7 +19,7 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['ADMIN', 'RADIOLOGIST', 'VIEWER'],
+    enum: ['ADMIN', 'RADIOLOGIST', 'VIEWER', 'REFERRING_PHYSICIAN'],
     default: 'RADIOLOGIST'
   },
   isActive: {
@@ -40,13 +40,13 @@ const userSchema = new mongoose.Schema({
 });
 
 // Update timestamp on save
-userSchema.pre('save', function(next) {
+userSchema.pre('save', function (next) {
   this.updatedAt = Date.now();
   next();
 });
 
 // Remove password from JSON output
-userSchema.methods.toJSON = function() {
+userSchema.methods.toJSON = function () {
   const obj = this.toObject();
   delete obj.password;
   return obj;

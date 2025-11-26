@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import { Monitor, Save, X, FileText, Download, LayoutGrid, ChevronDown } from 'lucide-react';
+import { Monitor, Save, X, FileText, Download, LayoutGrid, ChevronDown, Search } from 'lucide-react';
 import ReportEditorV2 from '@/components/reporting/ReportEditorV2';
 import OHIFViewer from '@/components/reporting/OHIFViewer';
 import { reportsAPI, studiesAPI, templatesAPI } from '@/lib/api';
@@ -25,10 +25,14 @@ export default function ReportingPage({ params }) {
   const [detachedWindow, setDetachedWindow] = useState(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+  const [templates, setTemplates] = useState([]);
+  const [showTemplateMenu, setShowTemplateMenu] = useState(false);
+  const [templateSearch, setTemplateSearch] = useState('');
 
   useEffect(() => {
     loadStudyAndReport();
     loadCurrentUser();
+    loadTemplates();
   }, [studyUid]);
 
   useEffect(() => {
@@ -74,7 +78,7 @@ export default function ReportingPage({ params }) {
       }
     } catch (error) {
       console.error('Error loading study:', error);
-      toast.error('Failed to load study data');
+      toast.error('Échec du chargement des données de l\'\u00e9tude');
     } finally {
       setLoading(false);
     }
@@ -89,23 +93,36 @@ export default function ReportingPage({ params }) {
     }
   };
 
+  const loadTemplates = async () => {
+    try {
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      if (user.role !== 'VIEWER') {
+        const response = await templatesAPI.getAll();
+        setTemplates(response.data);
+      }
+    } catch (error) {
+      console.error('Failed to load templates:', error);
+    }
+  };
+
   const handleApplyTemplate = async (template) => {
     try {
-      // Set the report data with template content
+      // Set the report data with template content for ALL sections
       setReportData({
         technique: template.technique || '',
         findings: template.findings || '',
         conclusion: template.conclusion || ''
       });
-      
+
       // Increment usage count
       await templatesAPI.incrementUsage(template._id);
-      
+
       setShowTemplateMenu(false);
-      toast.success(`Template "${template.name}" applied`);
+      setTemplateSearch('');
+      toast.success(`Modèle "${template.name}" appliqué`);
     } catch (error) {
       console.error('Failed to apply template:', error);
-      toast.error('Failed to apply template');
+      toast.error('Échec de l\'application du modèle');
     }
   };
 
@@ -128,7 +145,7 @@ export default function ReportingPage({ params }) {
     // Try to parse sections from div structure
     const parser = new DOMParser();
     const doc = parser.parseFromString(content, 'text/html');
-    
+
     const techniqueDiv = doc.querySelector('.technique');
     const findingsDiv = doc.querySelector('.findings');
     const conclusionDiv = doc.querySelector('.conclusion');
@@ -157,41 +174,31 @@ export default function ReportingPage({ params }) {
     return age;
   };
 
-  const handleDetachViewer = async () => {
-    try {
-      // Get Orthanc credentials
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
-      const token = localStorage.getItem('token');
-      
-      const response = await fetch(`${apiUrl}/settings/orthanc-credentials`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+  const handleDetachViewer = () => {
+    // Get JWT token from localStorage
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch credentials');
-      }
+    if (!token) {
+      toast.error('Authentification requise. Veuillez vous connecter.');
+      return;
+    }
 
-      const credentials = await response.json();
-      const ohifUrl = `${credentials.url}/ohif/viewer?StudyInstanceUIDs=${studyUid}`;
-      
-      const newWindow = window.open(
-        ohifUrl,
-        'OHIF_Viewer',
-        'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no'
-      );
-      
-      if (newWindow) {
-        setDetachedWindow(newWindow);
-        setViewerMode('detached');
-        toast.success('Viewer opened in new window. Drag to second monitor.');
-      } else {
-        toast.error('Failed to open viewer. Please allow popups.');
-      }
-    } catch (error) {
-      console.error('Detach viewer error:', error);
-      toast.error('Failed to open viewer');
+    // Use the proxy's viewer endpoint which handles authentication server-side
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+    const viewerUrl = `${apiUrl}/proxy/viewer?StudyInstanceUIDs=${studyUid}&token=${token}`;
+
+    const newWindow = window.open(
+      viewerUrl,
+      'OHIF_Viewer',
+      'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no'
+    );
+
+    if (newWindow) {
+      setDetachedWindow(newWindow);
+      setViewerMode('detached');
+      toast.success('Visualiseur ouvert dans une nouvelle fenêtre');
+    } else {
+      toast.error('Échec de l\'ouverture du visualiseur. Veuillez autoriser les fenêtres contextuelles.');
     }
   };
 
@@ -200,7 +207,7 @@ export default function ReportingPage({ params }) {
       detachedWindow.close();
     }
     setDetachedWindow(null);
-    setViewerMode('split');
+    setViewerMode('hidden');
   };
 
   const toggleViewerMode = () => {
@@ -209,9 +216,9 @@ export default function ReportingPage({ params }) {
 
   const handleSaveReport = async () => {
     const combinedContent = combineReportSections(reportData);
-    
+
     if (!combinedContent.trim() || combinedContent === '<div class="technique"></div><div class="findings"></div><div class="conclusion"></div>') {
-      toast.error('Report content cannot be empty');
+      toast.error('Le contenu du rapport ne peut pas être vide');
       return;
     }
 
@@ -224,7 +231,7 @@ export default function ReportingPage({ params }) {
           content: combinedContent,
           status: 'DRAFT'
         });
-        toast.success('Report updated successfully');
+        toast.success('Rapport mis à jour avec succès');
       } else {
         // Create new report
         const response = await reportsAPI.create({
@@ -240,11 +247,11 @@ export default function ReportingPage({ params }) {
         if (response.data && response.data.report) {
           setExistingReport(response.data.report);
         }
-        toast.success('Report created successfully');
+        toast.success('Rapport créé avec succès');
       }
     } catch (error) {
       console.error('Error saving report:', error);
-      toast.error(error.response?.data?.error || 'Failed to save report');
+      toast.error(error.response?.data?.error || 'Échec de l\'enregistrement du rapport');
     } finally {
       setSaving(false);
     }
@@ -252,9 +259,9 @@ export default function ReportingPage({ params }) {
 
   const handleFinalizeReport = async () => {
     const combinedContent = combineReportSections(reportData);
-    
+
     if (!combinedContent.trim() || combinedContent === '<div class="technique"></div><div class="findings"></div><div class="conclusion"></div>') {
-      toast.error('Report content cannot be empty');
+      toast.error('Le contenu du rapport ne peut pas être vide');
       return;
     }
 
@@ -279,11 +286,11 @@ export default function ReportingPage({ params }) {
         });
       }
 
-      toast.success('Report finalized successfully');
+      toast.success('Rapport finalisé avec succès');
       router.push('/dashboard/reports');
     } catch (error) {
       console.error('Error finalizing report:', error);
-      toast.error(error.response?.data?.error || 'Failed to finalize report');
+      toast.error(error.response?.data?.error || 'Échec de la finalisation du rapport');
     } finally {
       setSaving(false);
     }
@@ -291,20 +298,20 @@ export default function ReportingPage({ params }) {
 
   const handleExportWord = async () => {
     const combinedContent = combineReportSections(reportData);
-    
+
     if (!combinedContent.trim()) {
-      toast.error('Report content is empty');
+      toast.error('Le contenu du rapport est vide');
       return;
     }
 
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
       const settingsResponse = await fetch(`${apiUrl}/settings`);
-      
+
       if (!settingsResponse.ok) {
-        throw new Error('Failed to fetch settings');
+        throw new Error('Échec de la récupération des paramètres');
       }
-      
+
       const settings = await settingsResponse.json();
 
       await exportToWord(
@@ -316,30 +323,30 @@ export default function ReportingPage({ params }) {
         settings.HOSPITAL_NAME || settings.hospitalName || 'Medical Center',
         settings.FOOTER_TEXT || settings.footerText || ''
       );
-      toast.success('Word document exported successfully');
+      toast.success('Document Word exporté avec succès');
       setShowExportMenu(false);
     } catch (error) {
       console.error('Export error:', error);
-      toast.error(`Failed to export Word document: ${error.message}`);
+      toast.error(`Échec de l\'exportation du document Word : ${error.message}`);
     }
   };
 
   const handleExportPDF = async () => {
     const combinedContent = combineReportSections(reportData);
-    
+
     if (!combinedContent.trim()) {
-      toast.error('Report content is empty');
+      toast.error('Le contenu du rapport est vide');
       return;
     }
 
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
       const settingsResponse = await fetch(`${apiUrl}/settings`);
-      
+
       if (!settingsResponse.ok) {
-        throw new Error('Failed to fetch settings');
+        throw new Error('Échec de la récupération des paramètres');
       }
-      
+
       const settings = await settingsResponse.json();
 
       await exportToPDF(
@@ -351,11 +358,11 @@ export default function ReportingPage({ params }) {
         settings.HOSPITAL_NAME || settings.hospitalName || 'Medical Center',
         settings.FOOTER_TEXT || settings.footerText || ''
       );
-      toast.success('PDF exported successfully');
+      toast.success('PDF exporté avec succès');
       setShowExportMenu(false);
     } catch (error) {
       console.error('Export error:', error);
-      toast.error(`Failed to export PDF: ${error.message}`);
+      toast.error(`Échec de l\'exportation du PDF : ${error.message}`);
     }
   };
 
@@ -364,7 +371,7 @@ export default function ReportingPage({ params }) {
       <div className="flex items-center justify-center h-screen bg-gray-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading reporting workstation...</p>
+          <p className="mt-4 text-gray-600">Chargement du poste de travail de rapport...</p>
         </div>
       </div>
     );
@@ -374,12 +381,12 @@ export default function ReportingPage({ params }) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-50">
         <div className="text-center">
-          <p className="text-red-600 text-xl">Study not found</p>
+          <p className="text-red-600 text-xl">Étude non trouvée</p>
           <button
             onClick={() => router.push('/dashboard/reports')}
             className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
           >
-            Back to Reports
+            Retour aux rapports
           </button>
         </div>
       </div>
@@ -389,106 +396,180 @@ export default function ReportingPage({ params }) {
   return (
     <div className="h-screen flex flex-col bg-gray-50">
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-3 shadow-lg flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <div>
-            <h1 className="text-lg font-bold">{study.patientName}</h1>
-            <p className="text-sm text-blue-100">
+      <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-2 shadow-lg flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <div className="min-w-0 flex-shrink">
+            <h1 className="text-sm md:text-base font-bold truncate">{study.patientName}</h1>
+            <p className="text-xs text-blue-100 truncate hidden sm:block">
               ID: {study.patientId || 'N/A'} • Âge: {calculateAge(study.patientBirthDate)} • {study.studyDescription}
             </p>
+            <p className="text-xs text-blue-100 truncate sm:hidden">
+              ID: {study.patientId || 'N/A'}
+            </p>
           </div>
-          
+
           {/* Viewer Mode Buttons */}
-          <div className="flex items-center space-x-2 border-l border-blue-500 pl-4">
+          <div className="hidden sm:flex items-center space-x-1 border-l border-blue-500 pl-3">
             <button
               onClick={toggleViewerMode}
-              className={`p-2 rounded hover:bg-blue-600 transition-colors ${viewerMode === 'split' ? 'bg-blue-800' : 'bg-blue-700'}`}
+              className={`p-1.5 rounded hover:bg-blue-600 transition-colors ${viewerMode === 'split' ? 'bg-blue-800' : 'bg-blue-700'}`}
               title={viewerMode === 'split' ? 'Masquer le visualiseur' : 'Afficher la vue partagée'}
             >
-              <LayoutGrid size={18} />
+              <LayoutGrid size={16} />
             </button>
-            
+
             {viewerMode !== 'detached' ? (
               <button
                 onClick={handleDetachViewer}
-                className="p-2 rounded hover:bg-blue-600 transition-colors bg-blue-700"
+                className="p-1.5 rounded hover:bg-blue-600 transition-colors bg-blue-700"
                 title="Détacher le visualiseur (Nouvelle fenêtre)"
               >
-                <Monitor size={18} />
+                <Monitor size={16} />
               </button>
             ) : (
               <button
                 onClick={handleReattachViewer}
-                className="p-2 rounded bg-blue-800 hover:bg-blue-900 transition-colors"
+                className="p-1.5 rounded bg-blue-800 hover:bg-blue-900 transition-colors"
                 title="Fermer le visualiseur externe"
               >
-                <X size={18} />
+                <X size={16} />
               </button>
             )}
           </div>
         </div>
 
-        <div className="flex items-center space-x-3">
-          {/* Export Dropdown - VIEWER can export but not save */}
+        <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
+          {/* Template Selector - Only for RADIOLOGIST and ADMIN */}
+          {(currentUser?.role === 'RADIOLOGIST' || currentUser?.role === 'ADMIN') && templates.length > 0 && (
+            <div className="relative">
+              <button
+                onClick={() => setShowTemplateMenu(!showTemplateMenu)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors text-sm font-medium"
+                title="Appliquer un modèle"
+              >
+                <FileText size={14} />
+                <span className="hidden lg:inline">Modèles</span>
+                <span className="text-xs bg-blue-400 px-1.5 py-0.5 rounded-full">{templates.length}</span>
+              </button>
+
+              {showTemplateMenu && (
+                <div className="absolute top-full left-0 mt-1 w-72 bg-white border border-gray-300 rounded-lg shadow-xl max-h-96 overflow-hidden z-50">
+                  {/* Search Input */}
+                  <div className="p-2 border-b border-gray-200 sticky top-0 bg-white">
+                    <div className="relative">
+                      <Search size={14} className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Rechercher..."
+                        value={templateSearch}
+                        onChange={(e) => setTemplateSearch(e.target.value)}
+                        className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Templates List */}
+                  <div className="overflow-y-auto max-h-80">
+                    {templates.filter(t =>
+                      t.name.toLowerCase().includes(templateSearch.toLowerCase()) ||
+                      (t.modality && t.modality.toLowerCase().includes(templateSearch.toLowerCase()))
+                    ).length === 0 ? (
+                      <div className="p-4 text-center text-gray-500 text-sm">
+                        Aucun modèle trouvé
+                      </div>
+                    ) : (
+                      templates.filter(t =>
+                        t.name.toLowerCase().includes(templateSearch.toLowerCase()) ||
+                        (t.modality && t.modality.toLowerCase().includes(templateSearch.toLowerCase()))
+                      ).map((template) => (
+                        <button
+                          key={template._id}
+                          onClick={() => handleApplyTemplate(template)}
+                          className="w-full px-3 py-2 text-left hover:bg-blue-50 border-b border-gray-100 last:border-b-0 transition-colors"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium text-gray-900 text-sm truncate flex-1">{template.name}</span>
+                            {template.isDefault && (
+                              <span className="text-yellow-500 text-xs ml-2">★</span>
+                            )}
+                          </div>
+                          {template.modality && (
+                            <span className="inline-block text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded mt-1">
+                              {template.modality}
+                            </span>
+                          )}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Export Dropdown - Everyone can export */}
           <div className="relative">
             <button
               onClick={() => setShowExportMenu(!showExportMenu)}
               disabled={!reportData.findings.trim() && !reportData.technique.trim() && !reportData.conclusion.trim()}
-              className="flex items-center space-x-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium shadow disabled:opacity-50"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors text-sm font-medium disabled:opacity-50"
+              title="Exporter le rapport"
             >
-              <Download size={18} />
-              <span>Exporter</span>
-              <ChevronDown size={16} />
+              <Download size={14} />
+              <span className="hidden lg:inline">Exporter</span>
             </button>
-            
+
             {showExportMenu && (
-              <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl z-50 py-1">
+              <div className="absolute right-0 mt-1 w-44 bg-white rounded-lg shadow-xl z-50 py-1">
                 <button
                   onClick={handleExportWord}
-                  className="w-full px-4 py-2 text-left text-gray-700 hover:bg-blue-50 flex items-center space-x-2"
+                  className="w-full px-3 py-1.5 text-left text-gray-700 hover:bg-blue-50 flex items-center gap-2 text-sm"
                 >
-                  <FileText size={16} />
-                  <span>Exporter en Word</span>
+                  <FileText size={14} />
+                  <span>Word</span>
                 </button>
                 <button
                   onClick={handleExportPDF}
-                  className="w-full px-4 py-2 text-left text-gray-700 hover:bg-blue-50 flex items-center space-x-2"
+                  className="w-full px-3 py-1.5 text-left text-gray-700 hover:bg-blue-50 flex items-center gap-2 text-sm"
                 >
-                  <Download size={16} />
-                  <span>Exporter en PDF</span>
+                  <Download size={14} />
+                  <span>PDF</span>
                 </button>
               </div>
             )}
           </div>
 
           {/* Save and Finalize - Only for RADIOLOGIST and ADMIN */}
-          {currentUser?.role !== 'VIEWER' && (
+          {(currentUser?.role === 'RADIOLOGIST' || currentUser?.role === 'ADMIN') && (
             <>
               <button
                 onClick={handleSaveReport}
                 disabled={saving}
-                className="flex items-center space-x-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-medium shadow disabled:opacity-50"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-green-500 text-white rounded hover:bg-green-600 transition-colors text-sm font-medium disabled:opacity-50"
+                title="Enregistrer le brouillon"
               >
-                <Save size={18} />
-                <span>{saving ? 'Enregistrement...' : 'Enregistrer le brouillon'}</span>
+                <Save size={14} />
+                <span className="hidden lg:inline">{saving ? 'Enregistrement...' : 'Brouillon'}</span>
               </button>
 
               <button
                 onClick={handleFinalizeReport}
                 disabled={saving}
-                className="flex items-center space-x-2 px-4 py-2 bg-white text-blue-700 rounded-lg hover:bg-blue-50 transition-colors font-bold shadow disabled:opacity-50"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white text-blue-700 rounded hover:bg-blue-50 transition-colors text-sm font-bold disabled:opacity-50"
+                title="Finaliser le rapport"
               >
-                <span>{saving ? 'Traitement...' : 'Finaliser le rapport'}</span>
+                <span className="hidden sm:inline">{saving ? 'Traitement...' : 'Finaliser'}</span>
+                <span className="sm:hidden">✓</span>
               </button>
             </>
           )}
 
           <button
             onClick={() => router.push('/dashboard')}
-            className="p-2 hover:bg-blue-800 rounded-lg transition-colors"
+            className="p-1.5 hover:bg-blue-800 rounded transition-colors"
             title="Fermer"
           >
-            <X size={20} />
+            <X size={16} />
           </button>
         </div>
       </div>
@@ -512,7 +593,7 @@ export default function ReportingPage({ params }) {
                 initialFindings={reportData.findings}
                 initialConclusion={reportData.conclusion}
                 onChange={setReportData}
-                readOnly={currentUser?.role === 'VIEWER'}
+                readOnly={currentUser?.role === 'VIEWER' || currentUser?.role === 'REFERRING_PHYSICIAN'}
                 onTemplateApply={handleApplyTemplate}
               />
             </Panel>
@@ -523,7 +604,7 @@ export default function ReportingPage({ params }) {
             initialFindings={reportData.findings}
             initialConclusion={reportData.conclusion}
             onChange={setReportData}
-            readOnly={currentUser?.role === 'VIEWER'}
+            readOnly={currentUser?.role === 'VIEWER' || currentUser?.role === 'REFERRING_PHYSICIAN'}
             onTemplateApply={handleApplyTemplate}
           />
         )}

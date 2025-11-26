@@ -24,7 +24,7 @@ export default function SettingsPage() {
   const checkAdminAccess = () => {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     if (user.role !== 'ADMIN') {
-      toast.error('Access denied. Admin only.');
+      toast.error('Accès refusé. Administrateurs uniquement.');
       router.push('/dashboard');
     }
   };
@@ -91,10 +91,10 @@ export default function SettingsPage() {
         headers: { Authorization: `Bearer ${token}` }
       });
 
-      toast.success('Settings saved successfully');
+      toast.success('Paramètres enregistrés avec succès');
     } catch (error) {
       console.error('Save error:', error);
-      toast.error('Failed to save settings');
+      toast.error('Échec de l\'enregistrement des paramètres');
     } finally {
       setSaving(false);
     }
@@ -107,7 +107,7 @@ export default function SettingsPage() {
         <div className="flex items-center justify-center h-screen">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading settings...</p>
+            <p className="mt-4 text-gray-600">Chargement des paramètres...</p>
           </div>
         </div>
       </>
@@ -117,7 +117,7 @@ export default function SettingsPage() {
   return (
     <>
       <Navbar />
-      
+
       <div className="min-h-screen bg-gray-50 py-8">
         <div className="max-w-4xl mx-auto px-4">
           {/* Header */}
@@ -184,7 +184,7 @@ export default function SettingsPage() {
             {/* Preview */}
             <div className="mt-8 border-t pt-6">
               <h3 className="text-md font-semibold text-gray-900 mb-4">Aperçu</h3>
-              
+
               {/* Header Preview */}
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 mb-4 border-2 border-blue-200">
                 <p className="text-lg font-bold text-center text-blue-900 mb-1">

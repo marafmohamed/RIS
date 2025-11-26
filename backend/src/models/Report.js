@@ -52,6 +52,46 @@ const reportSchema = new mongoose.Schema({
   finalizedAt: {
     type: Date
   },
+  // Validation tracking for referring physicians
+  validatedBy: [{
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    userName: String,
+    validatedAt: {
+      type: Date,
+      default: Date.now
+    },
+    feedback: String
+  }],
+  // Quality ratings from referring physicians
+  ratings: [{
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    userName: String,
+    rating: {
+      type: Number,
+      min: 1,
+      max: 5
+    },
+    comment: String,
+    ratedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  // Computed metrics
+  averageRating: {
+    type: Number,
+    default: 0
+  },
+  validationCount: {
+    type: Number,
+    default: 0
+  },
   createdAt: {
     type: Date,
     default: Date.now
@@ -63,7 +103,7 @@ const reportSchema = new mongoose.Schema({
 });
 
 // Update timestamp on save
-reportSchema.pre('save', function(next) {
+reportSchema.pre('save', function (next) {
   this.updatedAt = Date.now();
   if (this.status === 'FINAL' && !this.finalizedAt) {
     this.finalizedAt = Date.now();

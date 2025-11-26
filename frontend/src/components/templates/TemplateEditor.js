@@ -87,14 +87,14 @@ export default function TemplateEditor({ initialTechnique, initialFindings, init
   }, [initialConclusion, conclusionEditor]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 border-0">
       {/* Technique Section - Floating Box */}
       <div className="bg-white shadow-lg rounded-lg border-l-4 border-blue-500 overflow-hidden">
         <h3 className="text-sm font-bold text-blue-700 px-6 pt-4 pb-2 uppercase flex items-center">
           <span className="bg-blue-100 px-3 py-1 rounded">Technique</span>
         </h3>
         <TemplateEditorToolbar editor={techniqueEditor} />
-        <div className="p-6 min-h-[120px]">
+        <div className="rounded-none">
           <EditorContent editor={techniqueEditor} ref={techniqueRef} />
         </div>
       </div>
@@ -105,7 +105,7 @@ export default function TemplateEditor({ initialTechnique, initialFindings, init
           <span className="bg-gray-100 px-3 py-1 rounded">Findings</span>
         </h3>
         <TemplateEditorToolbar editor={findingsEditor} />
-        <div className="p-6 min-h-[400px]">
+        <div className="rounded-none min-h-[400px]">
           <EditorContent editor={findingsEditor} ref={findingsRef} />
         </div>
       </div>
@@ -116,7 +116,7 @@ export default function TemplateEditor({ initialTechnique, initialFindings, init
           <span className="bg-green-100 px-3 py-1 rounded">Conclusion</span>
         </h3>
         <TemplateEditorToolbar editor={conclusionEditor} />
-        <div className="p-6 min-h-[120px]">
+        <div className="rounded-none">
           <EditorContent editor={conclusionEditor} ref={conclusionRef} />
         </div>
       </div>

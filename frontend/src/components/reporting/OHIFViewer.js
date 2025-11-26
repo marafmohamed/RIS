@@ -10,46 +10,20 @@ export default function OHIFViewer({ studyUid }) {
   useEffect(() => {
     const setupViewer = async () => {
       try {
-        // Get Orthanc credentials from backend
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
         const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-        
+
         if (!token) {
           setError('Authentication required. Please log in.');
           setLoading(false);
           return;
         }
 
-        const response = await fetch(`${apiUrl}/settings/orthanc-credentials`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
+        // Use the proxy's viewer endpoint which handles authentication server-side
+        // This avoids browser blocking of HTTP Basic Auth popups in iframes
+        const viewerUrl = `${apiUrl}/proxy/viewer?StudyInstanceUIDs=${studyUid}&token=${token}`;
 
-        if (!response.ok) {
-          throw new Error('Failed to fetch Orthanc credentials');
-        }
-
-        const credentials = await response.json();
-        const { url, username, password } = credentials;
-
-        // Pre-authenticate with Orthanc to establish session
-        const authHeader = 'Basic ' + btoa(`${username}:${password}`);
-        
-        try {
-          await fetch(`${url}/studies`, {
-            headers: {
-              'Authorization': authHeader
-            },
-            credentials: 'include'
-          });
-        } catch (e) {
-          console.warn('Pre-authentication attempt:', e);
-        }
-
-        // Build direct OHIF URL
-        const ohifUrl = `${url}/ohif/viewer?StudyInstanceUIDs=${studyUid}`;
-        setViewerUrl(ohifUrl);
+        setViewerUrl(viewerUrl);
         setLoading(false);
       } catch (err) {
         console.error('Setup viewer error:', err);

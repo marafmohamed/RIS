@@ -7,8 +7,10 @@ import { studiesAPI } from '@/lib/api';
 import { toast } from 'sonner';
 import { FiSearch, FiFileText, FiCalendar, FiFilter } from 'react-icons/fi';
 import { format } from 'date-fns';
+import { useAuth } from '@/lib/AuthContext';
 
 export default function DashboardPage() {
+  const { user } = useAuth();
   const [studies, setStudies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({
@@ -54,6 +56,23 @@ export default function DashboardPage() {
       FINAL: 'bg-green-100 text-green-800'
     };
     return badges[status] || badges.UNREPORTED;
+  };
+
+  const getActionLabel = (study) => {
+    if (study.reportStatus === 'UNREPORTED') {
+      if (user?.role === 'RADIOLOGIST' || user?.role === 'ADMIN') {
+        return 'Créer un Rapport';
+      }
+      return 'En attente';
+    }
+    return 'Voir le Rapport';
+  };
+
+  const isActionEnabled = (study) => {
+    if (study.reportStatus === 'UNREPORTED') {
+      return user?.role === 'RADIOLOGIST' || user?.role === 'ADMIN';
+    }
+    return true;
   };
 
   // Pagination calculations
@@ -224,17 +243,25 @@ export default function DashboardPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadge(study.reportStatus)}`}>
-                          {study.reportStatus}
+                          {study.reportStatus === 'UNREPORTED' ? 'Non rapporté' :
+                            study.reportStatus === 'DRAFT' ? 'Brouillon' : 'Finalisé'}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <Link
-                          href={`/reporting/${study.studyInstanceUid}`}
-                          className="text-blue-600 hover:text-blue-900"
-                        >
-                          <FiFileText className="inline mr-1" />
-                          {study.reportStatus === 'UNREPORTED' ? 'Créer un Rapport' : 'Voir le Rapport'}
-                        </Link>
+                        {isActionEnabled(study) ? (
+                          <Link
+                            href={`/reporting/${study.studyInstanceUid}`}
+                            className="text-blue-600 hover:text-blue-900"
+                          >
+                            <FiFileText className="inline mr-1" />
+                            {getActionLabel(study)}
+                          </Link>
+                        ) : (
+                          <span className="text-gray-400 cursor-not-allowed">
+                            <FiFileText className="inline mr-1" />
+                            {getActionLabel(study)}
+                          </span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -249,7 +276,7 @@ export default function DashboardPage() {
           <div className="card mt-4">
             <div className="flex items-center justify-between">
               <div className="text-sm text-gray-700">
-                Showing {indexOfFirstStudy + 1} to {Math.min(indexOfLastStudy, studies.length)} of {studies.length} studies
+                Affichage de {indexOfFirstStudy + 1} à {Math.min(indexOfLastStudy, studies.length)} sur {studies.length} études
               </div>
               <div className="flex space-x-2">
                 <button
@@ -257,7 +284,7 @@ export default function DashboardPage() {
                   disabled={currentPage === 1}
                   className="px-3 py-1 rounded-md border border-gray-300 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Previous
+                  Précédent
                 </button>
                 {Array.from({ length: Math.min(totalPages, 10) }, (_, i) => {
                   const page = i + 1;
@@ -270,11 +297,10 @@ export default function DashboardPage() {
                       <button
                         key={page}
                         onClick={() => handlePageChange(page)}
-                        className={`px-3 py-1 rounded-md text-sm font-medium ${
-                          currentPage === page
-                            ? 'bg-blue-600 text-white'
-                            : 'border border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
-                        }`}
+                        className={`px-3 py-1 rounded-md text-sm font-medium ${currentPage === page
+                          ? 'bg-blue-600 text-white'
+                          : 'border border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
+                          }`}
                       >
                         {page}
                       </button>
@@ -295,11 +321,10 @@ export default function DashboardPage() {
                       <button
                         key={page}
                         onClick={() => handlePageChange(page)}
-                        className={`px-3 py-1 rounded-md text-sm font-medium ${
-                          currentPage === page
-                            ? 'bg-blue-600 text-white'
-                            : 'border border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
-                        }`}
+                        className={`px-3 py-1 rounded-md text-sm font-medium ${currentPage === page
+                          ? 'bg-blue-600 text-white'
+                          : 'border border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
+                          }`}
                       >
                         {page}
                       </button>
@@ -314,7 +339,7 @@ export default function DashboardPage() {
                   disabled={currentPage === totalPages}
                   className="px-3 py-1 rounded-md border border-gray-300 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Next
+                  Suivant
                 </button>
               </div>
             </div>
@@ -322,7 +347,7 @@ export default function DashboardPage() {
         )}
 
         <div className="mt-4 text-sm text-gray-600">
-          Total studies: {studies.length}
+          Total des études : {studies.length}
         </div>
       </div>
     </>

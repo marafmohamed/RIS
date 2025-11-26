@@ -27,6 +27,7 @@ export default function ReportEditorV2({ initialTechnique, initialFindings, init
     findings: false,
     conclusion: false
   });
+  const [focusedEditor, setFocusedEditor] = useState(null);
   const techniqueRef = useRef(null);
   const findingsRef = useRef(null);
   const conclusionRef = useRef(null);
@@ -103,31 +104,68 @@ export default function ReportEditorV2({ initialTechnique, initialFindings, init
     extensions: [...editorExtensions, Placeholder.configure({ placeholder: 'Describe the technique used...' })],
     content: initialTechnique || '',
     editable: !readOnly,
+    immediatelyRender: false, // Fix SSR hydration mismatch
     onUpdate: ({ editor }) => {
       handleContentChange();
     },
+    onFocus: () => setFocusedEditor('technique'),
+    onBlur: () => setFocusedEditor(null),
   });
 
   const findingsEditor = useEditor({
     extensions: [...editorExtensions, Placeholder.configure({ placeholder: 'Enter your findings here...' })],
     content: initialFindings || '',
     editable: !readOnly,
+    immediatelyRender: false, // Fix SSR hydration mismatch
     onUpdate: ({ editor }) => {
       handleContentChange();
       const text = editor.getText();
       const cursorPos = editor.state.selection.from;
       debouncedGrammarCheck(text, cursorPos);
     },
+    onFocus: () => setFocusedEditor('findings'),
+    onBlur: () => setFocusedEditor(null),
   });
 
   const conclusionEditor = useEditor({
     extensions: [...editorExtensions, Placeholder.configure({ placeholder: 'Write your conclusion...' })],
     content: initialConclusion || '',
     editable: !readOnly,
+    immediatelyRender: false, // Fix SSR hydration mismatch
     onUpdate: ({ editor }) => {
       handleContentChange();
     },
+    onFocus: () => setFocusedEditor('conclusion'),
+    onBlur: () => setFocusedEditor(null),
   });
+
+  // Update editors when initial props change (e.g., when template is applied)
+  useEffect(() => {
+    if (techniqueEditor && initialTechnique !== undefined) {
+      const currentContent = techniqueEditor.getHTML();
+      if (currentContent !== initialTechnique) {
+        techniqueEditor.commands.setContent(initialTechnique || '');
+      }
+    }
+  }, [initialTechnique, techniqueEditor]);
+
+  useEffect(() => {
+    if (findingsEditor && initialFindings !== undefined) {
+      const currentContent = findingsEditor.getHTML();
+      if (currentContent !== initialFindings) {
+        findingsEditor.commands.setContent(initialFindings || '');
+      }
+    }
+  }, [initialFindings, findingsEditor]);
+
+  useEffect(() => {
+    if (conclusionEditor && initialConclusion !== undefined) {
+      const currentContent = conclusionEditor.getHTML();
+      if (currentContent !== initialConclusion) {
+        conclusionEditor.commands.setContent(initialConclusion || '');
+      }
+    }
+  }, [initialConclusion, conclusionEditor]);
 
   const handleContentChange = () => {
     if (onChange && techniqueEditor && findingsEditor && conclusionEditor) {
@@ -267,7 +305,7 @@ export default function ReportEditorV2({ initialTechnique, initialFindings, init
       {readOnly && (
         <div className="bg-yellow-50 border-b border-yellow-200 px-6 py-3">
           <p className="text-sm text-yellow-800 font-medium">
-            📋 Mode Lecture Seule - Vous consultez ce rapport en tant que VISUALISEUR
+            Mode Lecture Seule - Vous consultez ce rapport en tant que VISUALISEUR
           </p>
         </div>
       )}
@@ -275,7 +313,9 @@ export default function ReportEditorV2({ initialTechnique, initialFindings, init
       <div className="flex-1 overflow-y-auto p-8 relative">
         <div className="max-w-[21cm] mx-auto space-y-6">
           {/* Technique Section - Floating Box */}
-          <div className="bg-white shadow-lg rounded-lg border-l-4 border-blue-500 overflow-hidden">
+          <div className={`bg-white shadow-lg rounded-lg overflow-hidden transition-all duration-200 ${
+            focusedEditor === 'technique' ? 'ring-2 ring-blue-500 border-l-4 border-blue-500' : 'border border-gray-200 border-l-4 border-blue-300'
+          }`}>
             <button
               onClick={() => toggleSection('technique')}
               className="w-full px-6 py-3 flex items-center justify-between hover:bg-blue-50 transition-colors"
@@ -287,8 +327,8 @@ export default function ReportEditorV2({ initialTechnique, initialFindings, init
             </button>
             {!collapsedSections.technique && (
               <>
-                {!readOnly && <EditorToolbar editor={techniqueEditor} onTemplateApply={handleTemplateApply} />}
-                <div className="px-6 pb-6 min-h-[120px]">
+                {!readOnly && <EditorToolbar editor={techniqueEditor} hideTemplates={true} />}
+                <div className="min-h-[120px]">
                   <EditorContent editor={techniqueEditor} ref={techniqueRef} />
                 </div>
               </>
@@ -296,7 +336,9 @@ export default function ReportEditorV2({ initialTechnique, initialFindings, init
           </div>
 
           {/* Findings Section - Main Content */}
-          <div className="bg-white shadow-lg rounded-lg overflow-hidden">
+          <div className={`bg-white shadow-lg rounded-lg overflow-hidden transition-all duration-200 ${
+            focusedEditor === 'findings' ? 'ring-2 ring-gray-400 border-l-4 border-gray-500' : 'border border-gray-200'
+          }`}>
             <button
               onClick={() => toggleSection('findings')}
               className="w-full px-6 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
@@ -308,8 +350,8 @@ export default function ReportEditorV2({ initialTechnique, initialFindings, init
             </button>
             {!collapsedSections.findings && (
               <>
-                {!readOnly && <EditorToolbar editor={findingsEditor} onTemplateApply={handleTemplateApply} />}
-                <div className="px-6 pb-6 min-h-[400px]">
+                {!readOnly && <EditorToolbar editor={findingsEditor} hideTemplates={true} />}
+                <div className="rounded-none h-full">
                   <EditorContent editor={findingsEditor} ref={findingsRef} />
                 </div>
               </>
@@ -317,7 +359,9 @@ export default function ReportEditorV2({ initialTechnique, initialFindings, init
           </div>
 
           {/* Conclusion Section - Floating Box */}
-          <div className="bg-white shadow-lg rounded-lg border-l-4 border-green-500 overflow-hidden">
+          <div className={`bg-white shadow-lg rounded-lg overflow-hidden transition-all duration-200 ${
+            focusedEditor === 'conclusion' ? 'ring-2 ring-green-500 border-l-4 border-green-500' : 'border border-gray-200 border-l-4 border-green-300'
+          }`}>
             <button
               onClick={() => toggleSection('conclusion')}
               className="w-full px-6 py-3 flex items-center justify-between hover:bg-green-50 transition-colors"
@@ -329,8 +373,8 @@ export default function ReportEditorV2({ initialTechnique, initialFindings, init
             </button>
             {!collapsedSections.conclusion && (
               <>
-                {!readOnly && <EditorToolbar editor={conclusionEditor} onTemplateApply={handleTemplateApply} />}
-                <div className="px-6 pb-6 min-h-[120px]">
+                {!readOnly && <EditorToolbar editor={conclusionEditor} hideTemplates={true} />}
+                <div className="rounded-none h-full">
                   <EditorContent editor={conclusionEditor} ref={conclusionRef} />
                 </div>
               </>

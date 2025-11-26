@@ -84,7 +84,6 @@ app.use('/api/users', userRoutes);
 app.use('/api/studies', studyRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/proxy', proxyRoutes);
-app.use('/api/proxy', dicomImagesRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/templates', templateRoutes);
 

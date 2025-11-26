@@ -80,7 +80,7 @@ export default function ReportsPage() {
     const userReports = reports.filter(r => r.authorId?._id === userId);
     const draft = userReports.filter(r => r.status === 'DRAFT').length;
     const final = userReports.filter(r => r.status === 'FINAL').length;
-    
+
     return { total: userReports.length, draft, final };
   };
 
@@ -91,6 +91,7 @@ export default function ReportsPage() {
   };
 
   const isAdmin = currentUser?.role === 'ADMIN';
+  const isViewer = currentUser?.role === 'VIEWER';
   const filteredReports = getFilteredReports();
 
   // Pagination calculations for reports
@@ -130,10 +131,12 @@ export default function ReportsPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">
-            {isAdmin ? 'Reports Management' : 'My Reports'}
+            {isAdmin ? 'Gestion des rapports' : isViewer ? 'Rapports' : 'Mes rapports'}
           </h1>
           <p className="mt-2 text-gray-600">
-            {isAdmin ? 'View all radiology reports and track productivity' : 'View and manage your radiology reports'}
+            {isAdmin ? 'Voir tous les rapports de radiologie et suivre la productivité' :
+              isViewer ? 'Consulter les rapports de radiologie finalisés' :
+                'Voir et gérer vos rapports de radiologie'}
           </p>
         </div>
 
@@ -147,7 +150,7 @@ export default function ReportsPage() {
                     <FiFileText className="h-6 w-6 text-blue-600" />
                   </div>
                   <div>
-                    <p className="text-sm text-gray-600">Total Reports</p>
+                    <p className="text-sm text-gray-600">Total des rapports</p>
                     <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
                   </div>
                 </div>
@@ -159,7 +162,7 @@ export default function ReportsPage() {
                     <FiEdit3 className="h-6 w-6 text-yellow-600" />
                   </div>
                   <div>
-                    <p className="text-sm text-gray-600">Draft Reports</p>
+                    <p className="text-sm text-gray-600">Rapports brouillons</p>
                     <p className="text-2xl font-bold text-gray-900">{stats.draft}</p>
                   </div>
                 </div>
@@ -171,7 +174,7 @@ export default function ReportsPage() {
                     <FiCheckCircle className="h-6 w-6 text-green-600" />
                   </div>
                   <div>
-                    <p className="text-sm text-gray-600">Final Reports</p>
+                    <p className="text-sm text-gray-600">Rapports finaux</p>
                     <p className="text-2xl font-bold text-gray-900">{stats.final}</p>
                   </div>
                 </div>
@@ -183,25 +186,23 @@ export default function ReportsPage() {
               <div className="flex items-center space-x-4">
                 <button
                   onClick={() => setViewMode('list')}
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                    viewMode === 'list'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${viewMode === 'list'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
                 >
                   <FiFileText className="inline mr-2" />
-                  Reports List
+                  Liste des rapports
                 </button>
                 <button
                   onClick={() => setViewMode('byUser')}
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                    viewMode === 'byUser'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${viewMode === 'byUser'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
                 >
                   <FiUsers className="inline mr-2" />
-                  By Radiologist
+                  Par radiologue
                 </button>
               </div>
             </div>
@@ -211,24 +212,24 @@ export default function ReportsPage() {
               <div className="card mb-6">
                 <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center px-6 pt-6">
                   <FiUsers className="mr-2" />
-                  Reports by Radiologist
+                  Rapports par radiologue
                 </h2>
-                
+
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                       <tr>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Radiologist
+                          Radiologue
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Email
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Total Reports
+                          Total des rapports
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Draft
+                          Brouillon
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Final
@@ -270,7 +271,7 @@ export default function ReportsPage() {
                                 }}
                                 className="text-blue-600 hover:text-blue-900"
                               >
-                                View Reports
+                                Voir les rapports
                               </button>
                             </td>
                           </tr>
@@ -285,7 +286,7 @@ export default function ReportsPage() {
                   <div className="px-6 py-4 border-t border-gray-200">
                     <div className="flex items-center justify-between">
                       <div className="text-sm text-gray-700">
-                        Showing {indexOfFirstUser + 1} to {Math.min(indexOfLastUser, radiologists.length)} of {radiologists.length} radiologists
+                        Affichage de {indexOfFirstUser + 1} à {Math.min(indexOfLastUser, radiologists.length)} sur {radiologists.length} radiologues
                       </div>
                       <div className="flex space-x-2">
                         <button
@@ -293,17 +294,16 @@ export default function ReportsPage() {
                           disabled={userTablePage === 1}
                           className="px-3 py-1 rounded-md border border-gray-300 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          Previous
+                          Précédent
                         </button>
                         {Array.from({ length: userTableTotalPages }, (_, i) => i + 1).map((page) => (
                           <button
                             key={page}
                             onClick={() => handleUserTablePageChange(page)}
-                            className={`px-3 py-1 rounded-md text-sm font-medium ${
-                              userTablePage === page
-                                ? 'bg-blue-600 text-white'
-                                : 'border border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
-                            }`}
+                            className={`px-3 py-1 rounded-md text-sm font-medium ${userTablePage === page
+                              ? 'bg-blue-600 text-white'
+                              : 'border border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
+                              }`}
                           >
                             {page}
                           </button>
@@ -313,7 +313,7 @@ export default function ReportsPage() {
                           disabled={userTablePage === userTableTotalPages}
                           className="px-3 py-1 rounded-md border border-gray-300 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          Next
+                          Suivant
                         </button>
                       </div>
                     </div>
@@ -330,17 +330,16 @@ export default function ReportsPage() {
             <div className="flex flex-wrap items-center gap-4">
               <div className="flex items-center space-x-2">
                 <FiFilter className="text-gray-500" />
-                <span className="text-sm font-medium text-gray-700">Filter by Status:</span>
+                <span className="text-sm font-medium text-gray-700">Filtrer par statut :</span>
                 <div className="flex space-x-2">
                   {['ALL', 'DRAFT', 'FINAL'].map((status) => (
                     <button
                       key={status}
                       onClick={() => setFilter(status)}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                        filter === status
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${filter === status
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
                     >
                       {status}
                     </button>
@@ -350,13 +349,13 @@ export default function ReportsPage() {
 
               {isAdmin && (
                 <div className="flex items-center space-x-2">
-                  <span className="text-sm font-medium text-gray-700">Radiologist:</span>
+                  <span className="text-sm font-medium text-gray-700">Radiologue :</span>
                   <select
                     value={selectedUser}
                     onChange={(e) => setSelectedUser(e.target.value)}
                     className="input max-w-xs"
                   >
-                    <option value="all">All Radiologists</option>
+                    <option value="all">Tous les radiologues</option>
                     {users.filter(u => u.role === 'RADIOLOGIST' || u.role === 'ADMIN').map((user) => (
                       <option key={user._id} value={user._id}>
                         {user.fullName}
@@ -371,7 +370,7 @@ export default function ReportsPage() {
                   onClick={() => setSelectedUser('all')}
                   className="btn btn-secondary"
                 >
-                  Clear Filter
+                  Effacer le filtre
                 </button>
               )}
             </div>
@@ -382,17 +381,17 @@ export default function ReportsPage() {
         {viewMode === 'list' && (
           <div className="card overflow-hidden">
             <h2 className="text-xl font-semibold text-gray-900 mb-4 px-6 pt-6">
-              Reports ({filteredReports.length})
+              Rapports ({filteredReports.length})
             </h2>
 
             {loading ? (
               <div className="text-center py-12">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-                <p className="mt-4 text-gray-600">Loading reports...</p>
+                <p className="mt-4 text-gray-600">Chargement des rapports...</p>
               </div>
             ) : filteredReports.length === 0 ? (
               <div className="text-center py-12">
-                <p className="text-gray-500">No reports found</p>
+                <p className="text-gray-500">Aucun rapport trouvé</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -403,21 +402,21 @@ export default function ReportsPage() {
                         Patient
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Study Date
+                        Date de l&apos;étude
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Modality
+                        Modalité
                       </th>
                       {isAdmin && (
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Author
+                          Auteur
                         </th>
                       )}
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Status
+                        Statut
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Updated
+                        Mis à jour
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Actions
@@ -466,7 +465,7 @@ export default function ReportsPage() {
                             className="text-blue-600 hover:text-blue-900"
                           >
                             <FiEye className="inline mr-1" />
-                            View
+                            Voir
                           </Link>
                         </td>
                       </tr>
@@ -481,7 +480,7 @@ export default function ReportsPage() {
               <div className="px-6 py-4 border-t border-gray-200">
                 <div className="flex items-center justify-between">
                   <div className="text-sm text-gray-700">
-                    Showing {indexOfFirstReport + 1} to {Math.min(indexOfLastReport, filteredReports.length)} of {filteredReports.length} reports
+                    Affichage de {indexOfFirstReport + 1} à {Math.min(indexOfLastReport, filteredReports.length)} sur {filteredReports.length} rapports
                   </div>
                   <div className="flex space-x-2">
                     <button
@@ -489,7 +488,7 @@ export default function ReportsPage() {
                       disabled={currentPage === 1}
                       className="px-3 py-1 rounded-md border border-gray-300 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      Previous
+                      Précédent
                     </button>
                     {Array.from({ length: Math.min(totalPages, 10) }, (_, i) => {
                       // Show first 3, last 3, and current page context
@@ -503,11 +502,10 @@ export default function ReportsPage() {
                           <button
                             key={page}
                             onClick={() => handlePageChange(page)}
-                            className={`px-3 py-1 rounded-md text-sm font-medium ${
-                              currentPage === page
-                                ? 'bg-blue-600 text-white'
-                                : 'border border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
-                            }`}
+                            className={`px-3 py-1 rounded-md text-sm font-medium ${currentPage === page
+                              ? 'bg-blue-600 text-white'
+                              : 'border border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
+                              }`}
                           >
                             {page}
                           </button>
@@ -528,11 +526,10 @@ export default function ReportsPage() {
                           <button
                             key={page}
                             onClick={() => handlePageChange(page)}
-                            className={`px-3 py-1 rounded-md text-sm font-medium ${
-                              currentPage === page
-                                ? 'bg-blue-600 text-white'
-                                : 'border border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
-                            }`}
+                            className={`px-3 py-1 rounded-md text-sm font-medium ${currentPage === page
+                              ? 'bg-blue-600 text-white'
+                              : 'border border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
+                              }`}
                           >
                             {page}
                           </button>
@@ -547,7 +544,7 @@ export default function ReportsPage() {
                       disabled={currentPage === totalPages}
                       className="px-3 py-1 rounded-md border border-gray-300 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      Next
+                      Suivant
                     </button>
                   </div>
                 </div>

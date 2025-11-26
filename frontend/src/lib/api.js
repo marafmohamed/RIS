@@ -69,6 +69,9 @@ export const reportsAPI = {
   update: (id, reportData) => api.put(`/reports/${id}`, reportData),
   delete: (id) => api.delete(`/reports/${id}`),
   getStats: () => api.get('/reports/stats/overview'),
+  validate: (id, data) => api.post(`/reports/${id}/validate`, data),
+  rate: (id, data) => api.post(`/reports/${id}/rate`, data),
+  getValidated: () => api.get('/reports/validated/me'),
 };
 
 // Templates API

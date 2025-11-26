@@ -11,11 +11,21 @@ export default function Navbar() {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const navItems = [
-    { href: '/dashboard', label: 'Liste de travail', icon: FiHome },
-    { href: '/dashboard/reports', label: user?.role === 'ADMIN' ? 'Rapports' : 'Mes Rapports', icon: FiFileText },
-    { href: '/dashboard/profile', label: 'Profil', icon: FiUser },
-  ];
+  const navItems = [];
+
+  if (user?.role === 'REFERRING_PHYSICIAN') {
+    navItems.push(
+      { href: '/dashboard', label: 'Liste de travail', icon: FiHome },
+      { href: '/dashboard/referring', label: 'Rapports finalisés', icon: FiFileText },
+      { href: '/dashboard/profile', label: 'Profil', icon: FiUser }
+    );
+  } else {
+    navItems.push(
+      { href: '/dashboard', label: 'Liste de travail', icon: FiHome },
+      { href: '/dashboard/reports', label: (user?.role === 'ADMIN' || user?.role === 'VIEWER') ? 'Rapports' : 'Mes Rapports', icon: FiFileText },
+      { href: '/dashboard/profile', label: 'Profil', icon: FiUser }
+    );
+  }
 
   if (user?.role === 'ADMIN') {
     navItems.push({ href: '/dashboard/users', label: 'Utilisateurs', icon: FiUsers });
@@ -45,11 +55,10 @@ export default function Navbar() {
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`inline-flex items-center px-3 py-2 border-b-2 text-sm font-medium ${
-                      isActive
-                        ? 'border-blue-500 text-blue-600'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    }`}
+                    className={`inline-flex items-center px-3 py-2 border-b-2 text-sm font-medium ${isActive
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      }`}
                   >
                     <Icon className="mr-2" />
                     {item.label}
@@ -96,11 +105,10 @@ export default function Navbar() {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`block pl-3 pr-4 py-2 border-l-4 text-base font-medium ${
-                    isActive
-                      ? 'bg-blue-50 border-blue-500 text-blue-700'
-                      : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700'
-                  }`}
+                  className={`block pl-3 pr-4 py-2 border-l-4 text-base font-medium ${isActive
+                    ? 'bg-blue-50 border-blue-500 text-blue-700'
+                    : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700'
+                    }`}
                   onClick={() => setMobileMenuOpen(false)}
                 >
                   <div className="flex items-center">

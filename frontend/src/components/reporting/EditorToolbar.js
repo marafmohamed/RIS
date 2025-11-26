@@ -63,15 +63,17 @@ const MEDICAL_TEMPLATES = {
   }
 };
 
-export default function EditorToolbar({ editor, onTemplateApply }) {
+export default function EditorToolbar({ editor, onTemplateApply, hideTemplates = false }) {
   const [templates, setTemplates] = useState([]);
   const [showTemplateDropdown, setShowTemplateDropdown] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [templateSearch, setTemplateSearch] = useState('');
 
   useEffect(() => {
-    loadTemplates();
-  }, []);
+    if (!hideTemplates) {
+      loadTemplates();
+    }
+  }, [hideTemplates]);
 
   const loadTemplates = async () => {
     try {
@@ -162,7 +164,7 @@ export default function EditorToolbar({ editor, onTemplateApply }) {
   return (
     <div className="bg-white border-b border-gray-300 px-4 py-2 flex flex-wrap items-center gap-1 sticky top-0 z-10 shadow-sm">
       {/* Custom Templates Dropdown */}
-      {templates.length > 0 && (
+      {!hideTemplates && templates.length > 0 && (
         <div className="relative mr-2">
           <button
             onClick={() => setShowTemplateDropdown(!showTemplateDropdown)}
