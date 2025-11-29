@@ -38,6 +38,12 @@ const templateSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  triggerWord: {
+    type: String,
+    trim: true,
+    default: '',
+    index: true
+  },
   isDefault: {
     type: Boolean,
     default: false
@@ -57,7 +63,7 @@ const templateSchema = new mongoose.Schema({
 });
 
 // Update timestamp on save
-templateSchema.pre('save', function(next) {
+templateSchema.pre('save', function (next) {
   this.updatedAt = Date.now();
   next();
 });

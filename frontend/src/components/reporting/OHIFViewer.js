@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
-export default function OHIFViewer({ studyUid }) {
+export default function OHIFViewer({ studyUid, clinicId }) {
   const [viewerUrl, setViewerUrl] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -21,9 +21,12 @@ export default function OHIFViewer({ studyUid }) {
 
         // Use the proxy's viewer endpoint which handles authentication server-side
         // This avoids browser blocking of HTTP Basic Auth popups in iframes
-        const viewerUrl = `${apiUrl}/proxy/viewer?StudyInstanceUIDs=${studyUid}&token=${token}`;
+        let url = `${apiUrl}/proxy/viewer?StudyInstanceUIDs=${studyUid}&token=${token}`;
+        if (clinicId) {
+          url += `&clinicId=${clinicId}`;
+        }
 
-        setViewerUrl(viewerUrl);
+        setViewerUrl(url);
         setLoading(false);
       } catch (err) {
         console.error('Setup viewer error:', err);
@@ -33,7 +36,7 @@ export default function OHIFViewer({ studyUid }) {
     };
 
     setupViewer();
-  }, [studyUid]);
+  }, [studyUid, clinicId]);
 
   if (error) {
     return (

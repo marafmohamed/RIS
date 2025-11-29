@@ -72,6 +72,9 @@ export const reportsAPI = {
   validate: (id, data) => api.post(`/reports/${id}/validate`, data),
   rate: (id, data) => api.post(`/reports/${id}/rate`, data),
   getValidated: () => api.get('/reports/validated/me'),
+  assign: (data) => api.post('/reports/assign', data),
+  downloadPDF: (id) => api.get(`/reports/download/${id}/pdf`),
+  downloadWord: (id) => api.get(`/reports/download/${id}/word`),
 };
 
 // Templates API
@@ -82,6 +85,15 @@ export const templatesAPI = {
   update: (id, templateData) => api.put(`/templates/${id}`, templateData),
   delete: (id) => api.delete(`/templates/${id}`),
   incrementUsage: (id) => api.post(`/templates/${id}/use`),
+};
+
+// Clinics API
+export const clinicsAPI = {
+  getAll: () => api.get('/clinics'),
+  getById: (id) => api.get(`/clinics/${id}`),
+  create: (data) => api.post('/clinics', data),
+  update: (id, data) => api.put(`/clinics/${id}`, data),
+  delete: (id) => api.delete(`/clinics/${id}`),
 };
 
 export default api;

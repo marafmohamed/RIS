@@ -1,11 +1,11 @@
-import { Document, Packer, Paragraph, Table, TableRow, TableCell, WidthType, TextRun, AlignmentType, BorderStyle, HeadingLevel, Footer } from "docx";
+import { Document, Packer, Paragraph, Table, TableRow, TableCell, WidthType, TextRun, AlignmentType, BorderStyle, Header, Footer, ImageRun, VerticalAlign } from "docx";
 import { saveAs } from "file-saver";
 
 /**
  * Generate and download a professional medical report in Word format
- * Matches the TDM CEREBRALE report template structure
+ * Matches the provided sample structure with Clinic customization
  */
-export const downloadWordReport = async (reportData, settings = {}) => {
+export const downloadWordReport = async (reportData, clinicData = null, settings = {}) => {
   const {
     patientName,
     patientId,
@@ -16,25 +16,19 @@ export const downloadWordReport = async (reportData, settings = {}) => {
     reportContent,
     findings,
     conclusion,
-    doctorName
+    technique
   } = reportData;
 
-  // Get hospital settings (can be overridden)
-  const hospitalName = settings.hospitalName || "l'EPH MAZOUNA";
-  const footerText = settings.footerText || "Cité Bousrour en face les pompiers Mazouna Relizane   Tel 0779 00 46 56   حي بوسرور مقابل الحماية المدنية مازونة غليزان";
-
-  // Parse patient name - handle both ^ and space separators
+  // Parse patient name
   let lastName = 'N/A';
   let firstName = 'N/A';
-  
+
   if (patientName) {
     if (patientName.includes('^')) {
-      // DICOM format: LAST^FIRST
       const nameParts = patientName.split('^');
       lastName = nameParts[0]?.trim() || 'N/A';
       firstName = nameParts[1]?.trim() || 'N/A';
     } else {
-      // Space-separated format: assume "FIRST LAST" or "LAST FIRST"
       const nameParts = patientName.trim().split(/\s+/);
       if (nameParts.length >= 2) {
         firstName = nameParts[0];
@@ -52,486 +46,397 @@ export const downloadWordReport = async (reportData, settings = {}) => {
     year: 'numeric'
   });
 
-  const doc = new Document({
-    numbering: {
-      config: [
-        {
-          reference: 'default-numbering',
-          levels: [
-            {
-              level: 0,
-              format: 'decimal',
-              text: '%1.',
-              alignment: AlignmentType.LEFT,
-              style: {
-                paragraph: {
-                  indent: { left: 720, hanging: 360 },
-                },
-              },
-            },
-          ],
-        },
-      ],
-    },
-    sections: [{
-      properties: {
-        page: {
-          margin: {
-            top: 1440,    // 1 inch = 1440 twips
-            right: 1440,
-            bottom: 1440,
-            left: 1440,
-          }
-        }
-      },
-      footers: {
-        default: new Footer({
-          children: [
-            new Paragraph({
-              children: [
-                new TextRun({ 
-                  text: footerText,
-                  size: 18,
-                  color: "666666"
-                })
-              ],
-              alignment: AlignmentType.CENTER,
-              border: {
-                top: { style: BorderStyle.SINGLE, size: 1, color: "CCCCCC" }
-              },
-              spacing: { before: 200 }
-            })
-          ]
-        })
-      },
-      children: [
-        // DATE (Top Right)
-        new Paragraph({
-          children: [new TextRun({ text: reportDate, bold: true })],
-          alignment: AlignmentType.RIGHT,
-          spacing: { after: 300 }
-        }),
-
-        // PATIENT IDENTIFICATION TABLE
-        new Table({
-          width: { size: 100, type: WidthType.PERCENTAGE },
-          borders: {
-            top: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
-            bottom: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
-            left: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
-            right: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
-          },
-          rows: [
-            new TableRow({
-              children: [
-                new TableCell({
-                  children: [new Paragraph({ 
-                    children: [new TextRun({ text: "IDENTIFICATION DU PATIENT", bold: true, size: 24 })], 
-                    alignment: AlignmentType.CENTER 
-                  })],
-                  columnSpan: 3,
-                  borders: { 
-                    bottom: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
-                    top: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
-                    left: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
-                    right: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
-                  },
-                  shading: { fill: "E8E8E8" }
-                }),
-              ],
-            }),
-            new TableRow({
-              children: [
-                new TableCell({ 
-                  children: [new Paragraph({ 
-                    children: [
-                      new TextRun({ text: "Nom : ", bold: true }),
-                      new TextRun({ text: lastName })
-                    ]
-                  })],
-                  width: { size: 33, type: WidthType.PERCENTAGE }
-                }),
-                new TableCell({ 
-                  children: [new Paragraph({ 
-                    children: [
-                      new TextRun({ text: "Prénom : ", bold: true }),
-                      new TextRun({ text: firstName })
-                    ]
-                  })],
-                  width: { size: 34, type: WidthType.PERCENTAGE }
-                }),
-                new TableCell({ 
-                  children: [new Paragraph({ 
-                    children: [
-                      new TextRun({ text: "Age : ", bold: true }),
-                      new TextRun({ text: patientAge ? `${patientAge} ans` : 'N/A' })
-                    ]
-                  })],
-                  width: { size: 33, type: WidthType.PERCENTAGE }
-                }),
-              ],
-            }),
-          ],
-        }),
-
-        new Paragraph({ text: "", spacing: { after: 300 } }), // Spacer
-
-        // EXAM TYPE TITLE BLOCK
-        new Table({
-          width: { size: 100, type: WidthType.PERCENTAGE },
-          borders: {
-            top: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
-            bottom: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
-            left: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
-            right: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
-          },
-          rows: [
-            new TableRow({
-              children: [
-                new TableCell({
-                  children: [
-                    new Paragraph({
-                      children: [new TextRun({ 
-                        text: `INTERPRETATION DE ${studyDescription?.toUpperCase() || modality?.toUpperCase() || 'TDM'}`, 
-                        bold: true, 
-                        size: 28 
-                      })],
-                      alignment: AlignmentType.CENTER,
-                      spacing: { before: 100, after: 100 }
-                    }),
-                    new Paragraph({
-                      children: [new TextRun({ 
-                        text: `Examen réalisé au niveau de ${hospitalName}`, 
-                        bold: true,
-                        size: 22
-                      })],
-                      alignment: AlignmentType.CENTER,
-                      spacing: { after: 100 }
-                    })
-                  ],
-                  shading: { fill: "F0F0F0" }
-                })
-              ]
-            })
-          ]
-        }),
-
-        new Paragraph({ text: "", spacing: { after: 400 } }), // Spacer
-
-        // TECHNIQUE (if provided)
-        ...(reportData.technique ? [
-          new Paragraph({
-            children: [new TextRun({ text: "TECHNIQUE:", bold: true, size: 24 })],
-            spacing: { before: 200, after: 100 }
-          }),
-          ...parseHtmlToDocxParagraphs(reportData.technique || ''),
-          new Paragraph({ text: "", spacing: { after: 300 } })
-        ] : []),
-
-        // Insert findings content (parsed from rich text editor)
-        // User creates their own section titles within the rich text editor
-        ...parseHtmlToDocxParagraphs(findings || reportContent || ''),
-
-        new Paragraph({ text: "", spacing: { after: 300 } }), // Spacer
-
-        // CONCLUSION BOX
-        new Table({
-          width: { size: 100, type: WidthType.PERCENTAGE },
-          rows: [
-            new TableRow({
-              children: [
-                new TableCell({
-                  children: [
-                    new Paragraph({ 
-                      children: [new TextRun({ text: "CONCLUSION :", bold: true, size: 24 })],
-                      spacing: { before: 150, after: 150 }
-                    }),
-                    ...parseConclusionToDocxParagraphs(conclusion)
-                  ],
-                  borders: {
-                    top: { style: BorderStyle.DOUBLE, size: 3, color: "000000" },
-                    bottom: { style: BorderStyle.DOUBLE, size: 3, color: "000000" },
-                    left: { style: BorderStyle.DOUBLE, size: 3, color: "000000" },
-                    right: { style: BorderStyle.DOUBLE, size: 3, color: "000000" },
-                  },
-                  shading: { fill: "F8F8F8" }
-                })
-              ]
-            })
-          ]
-        })
-      ],
-    }],
-  });
-
-  // Generate and download the file
-  Packer.toBlob(doc).then((blob) => {
-    const filename = `${lastName}_${firstName}_${studyDescription || 'Report'}_${new Date().toISOString().split('T')[0]}.docx`;
-    saveAs(blob, filename);
-  });
-};
-
-/**
- * Parse HTML content from rich text editor to Word paragraphs
- * Handles formatting: bold, italic, headings, lists, line breaks, text alignment
- */
-function parseHtmlToDocxParagraphs(htmlContent) {
-  if (!htmlContent || !htmlContent.trim()) return [
-    new Paragraph({
-      children: [new TextRun({ text: "[Contenu du rapport à remplir]", italics: true, size: 22 })],
-      spacing: { after: 150 }
-    })
-  ];
-
-  const paragraphs = [];
-  
-  if (typeof document !== 'undefined') {
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = htmlContent;
-    
-    // Helper to get alignment from style
-    const getAlignment = (element) => {
-      const textAlign = element.style.textAlign || element.getAttribute('data-text-align');
-      switch (textAlign) {
-        case 'center': return AlignmentType.CENTER;
-        case 'right': return AlignmentType.RIGHT;
-        case 'justify': return AlignmentType.JUSTIFIED;
-        default: return AlignmentType.LEFT;
-      }
-    };
-    
-    // Process each child node for inline formatting
-    const processNode = (node, parentStyles = {}) => {
-      if (node.nodeType === Node.TEXT_NODE) {
-        const text = node.textContent;
-        if (text) {
-          return new TextRun({ text, size: 22, ...parentStyles });
-        }
-        return null;
-      }
-      
-      if (node.nodeType === Node.ELEMENT_NODE) {
-        const tagName = node.tagName.toLowerCase();
-        const newStyles = { ...parentStyles };
-        
-        // Apply formatting based on tag
-        switch (tagName) {
-          case 'strong':
-          case 'b':
-            newStyles.bold = true;
-            break;
-          case 'em':
-          case 'i':
-            newStyles.italics = true;
-            break;
-          case 'u':
-            newStyles.underline = {};
-            break;
-        }
-        
-        // Recursively process child nodes
-        const runs = [];
-        Array.from(node.childNodes).forEach(child => {
-          const run = processNode(child, newStyles);
-          if (run) {
-            if (Array.isArray(run)) {
-              runs.push(...run);
-            } else {
-              runs.push(run);
-            }
-          }
-        });
-        
-        return runs.length > 0 ? runs : null;
-      }
-      
-      return null;
-    };
-    
-    // Process block-level elements
-    const children = Array.from(tempDiv.children);
-    let listCounter = 1; // For numbered lists
-    
-    if (children.length === 0) {
-      // No block elements, just text
-      const lines = tempDiv.innerHTML.split(/<br\s*\/?>/i);
-      lines.forEach(line => {
-        const div = document.createElement('div');
-        div.innerHTML = line;
-        const text = div.textContent.trim();
-        if (text) {
-          paragraphs.push(
-            new Paragraph({
-              children: [new TextRun({ text, size: 22 })],
-              spacing: { after: 150 }
-            })
-          );
-        }
-      });
-    } else {
-      children.forEach(child => {
-        const tagName = child.tagName.toLowerCase();
-        const text = child.textContent.trim();
-        
-        if (!text) return;
-        
-        if (tagName === 'p') {
-          // Handle paragraphs with alignment
-          const runs = [];
-          const processedNodes = processNode(child);
-          
-          if (processedNodes) {
-            const runsArray = Array.isArray(processedNodes) ? processedNodes : [processedNodes];
-            runs.push(...runsArray.filter(r => r));
-          }
-          
-          // Fallback if no formatted runs
-          if (runs.length === 0 && text) {
-            runs.push(new TextRun({ text, size: 22 }));
-          }
-          
-          if (runs.length > 0) {
-            paragraphs.push(
-              new Paragraph({
-                children: runs,
-                alignment: getAlignment(child),
-                spacing: { after: 150 }
-              })
-            );
-          }
-        } else if (tagName === 'ul') {
-          // Handle bullet lists
-          const items = Array.from(child.getElementsByTagName('li'));
-          items.forEach((li, index) => {
-            const liText = li.textContent.trim();
-            if (liText) {
-              const runs = [];
-              const processedNodes = processNode(li);
-              
-              if (processedNodes) {
-                const runsArray = Array.isArray(processedNodes) ? processedNodes : [processedNodes];
-                runs.push(...runsArray.filter(r => r));
-              }
-              
-              if (runs.length === 0) {
-                runs.push(new TextRun({ text: liText, size: 22 }));
-              }
-              
-              paragraphs.push(
-                new Paragraph({
-                  children: runs,
-                  bullet: { level: 0 },
-                  spacing: { after: 150 }
-                })
-              );
-            }
-          });
-        } else if (tagName === 'ol') {
-          // Handle numbered lists
-          const items = Array.from(child.getElementsByTagName('li'));
-          items.forEach((li, index) => {
-            const liText = li.textContent.trim();
-            if (liText) {
-              const runs = [];
-              const processedNodes = processNode(li);
-              
-              if (processedNodes) {
-                const runsArray = Array.isArray(processedNodes) ? processedNodes : [processedNodes];
-                runs.push(...runsArray.filter(r => r));
-              }
-              
-              if (runs.length === 0) {
-                runs.push(new TextRun({ text: liText, size: 22 }));
-              }
-              
-              paragraphs.push(
-                new Paragraph({
-                  children: runs,
-                  numbering: { reference: 'default-numbering', level: 0 },
-                  spacing: { after: 150 }
-                })
-              );
-            }
-          });
-        } else if (tagName.match(/^h[1-6]$/)) {
-          // Handle headings
-          const level = parseInt(tagName[1]);
-          const size = 32 - (level * 2); // h1=30, h2=28, etc.
-          
-          paragraphs.push(
-            new Paragraph({
-              children: [new TextRun({ text, bold: true, size })],
-              alignment: getAlignment(child),
-              spacing: { before: 200, after: 150 }
-            })
-          );
-        } else {
-          // Default: treat as paragraph
-          paragraphs.push(
-            new Paragraph({
-              children: [new TextRun({ text, size: 22 })],
-              alignment: getAlignment(child),
-              spacing: { after: 150 }
-            })
-          );
-        }
-      });
-    }
+  // Prepare Header
+  let headerChildren = [];
+  if (clinicData?.headerContent) {
+    headerChildren = parseHtmlToDocxParagraphs(clinicData.headerContent);
   } else {
-    // Server-side fallback
-    const cleanText = htmlContent
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<\/p>/gi, '\n')
-      .replace(/<li>/gi, '• ')
-      .replace(/<[^>]*>/g, '')
-      .trim();
-    
-    const lines = cleanText.split('\n').filter(line => line.trim());
-    
-    lines.forEach(line => {
-      const trimmedLine = line.trim();
-      if (trimmedLine) {
-        paragraphs.push(
-          new Paragraph({
-            children: [new TextRun({ text: trimmedLine, size: 22 })],
-            spacing: { after: 150 }
-          })
-        );
-      }
-    });
-  }
+    // Fallback to text header
+    const clinicName = clinicData?.name || settings.hospitalName || "Cabinet D'imagerie Médicale Dahra";
+    const clinicNameArabic = clinicData?.nameArabic || "عيادة التصوير الطبي الظهرة";
 
-  return paragraphs.length > 0 ? paragraphs : [
-    new Paragraph({
-      children: [new TextRun({ text: "[Contenu du rapport à remplir]", italics: true, size: 22 })],
-      spacing: { after: 150 }
-    })
-  ];
-}
-
-/**
- * Parse conclusion text to paragraphs with proper line breaks
- */
-function parseConclusionToDocxParagraphs(conclusion) {
-  if (!conclusion || !conclusion.trim()) {
-    return [
-      new Paragraph({ 
-        children: [new TextRun({ 
-          text: "",
-          size: 22
-        })],
-        spacing: { before: 100, after: 150 }
+    headerChildren = [
+      new Paragraph({
+        children: [
+          new TextRun({ text: clinicNameArabic, size: 24, bold: true }),
+        ],
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 100 }
+      }),
+      new Paragraph({
+        children: [
+          new TextRun({ text: clinicName, size: 22, bold: false, italics: true }),
+        ],
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 200 }
+      }),
+      new Paragraph({
+        children: [], // Spacer line
+        border: {
+          bottom: { style: BorderStyle.SINGLE, size: 6, color: "000000" }
+        },
+        spacing: { after: 200 }
       })
     ];
   }
 
-  // Parse HTML conclusion and extract text properly
-  // Use the same parser as findings/technique to preserve all styles
-  return parseHtmlToDocxParagraphs(conclusion);
+  const headers = {
+    default: new Header({
+      children: headerChildren,
+    }),
+  };
+
+
+  // Prepare Footer
+  let footerChildren = [];
+  if (clinicData?.footerContent) {
+    footerChildren = parseHtmlToDocxParagraphs(clinicData.footerContent);
+  } else {
+    // Fallback to text footer
+    const footerText = clinicData?.address || settings.footerText || "Cité Bousrour en face les pompiers Mazouna Relizane";
+    const footerPhone = clinicData?.phone || "Tel 0779 00 46 56";
+    const footerArabic = "حي بوسرور مقابل الحماية المدنية مازونة غليزان";
+
+    footerChildren = [
+      new Paragraph({
+        children: [], // Spacer line
+        border: {
+          top: { style: BorderStyle.SINGLE, size: 6, color: "000000" }
+        },
+        spacing: { before: 200, after: 100 }
+      }),
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: `${footerText}   ${footerPhone}   ${footerArabic}`,
+            size: 18,
+            color: "666666"
+          })
+        ],
+        alignment: AlignmentType.CENTER,
+      })
+    ];
+  }
+
+  const footers = {
+    default: new Footer({
+      children: footerChildren,
+    }),
+  };
+
+  const doc = new Document({
+    sections: [{
+      properties: {
+        page: {
+          margin: {
+            top: 720, // 0.5 inch
+            right: 720,
+            bottom: 720,
+            left: 720,
+          }
+        }
+      },
+      headers: headers,
+      footers: footers,
+      children: [
+        // Date (Top Right)
+        new Paragraph({
+          children: [new TextRun({ text: reportDate, size: 24 })],
+          alignment: AlignmentType.RIGHT,
+          spacing: { after: 200 }
+        }),
+
+        // PATIENT IDENTIFICATION TABLE
+        createPatientTable(lastName, firstName, patientAge),
+
+        new Paragraph({ text: "", spacing: { after: 200 } }),
+
+        // EXAM TITLE
+        createExamTitle(studyDescription || modality || 'TDM'),
+
+        new Paragraph({ text: "", spacing: { after: 200 } }),
+
+        // Motif (if available - placeholder for now as it's not in reportData usually)
+        // new Paragraph({
+        //   children: [
+        //     new TextRun({ text: "Motif : ", bold: true, underline: { type: "single" }, size: 24 }),
+        //     new TextRun({ text: "Douleurs...", size: 24 })
+        //   ],
+        //   spacing: { after: 200 }
+        // }),
+
+        // TECHNIQUE
+        ...(technique ? [
+          new Paragraph({
+            children: [new TextRun({ text: "Technique d'examen :", bold: true, underline: { type: "single" }, italics: true, size: 24 })],
+            spacing: { after: 100 }
+          }),
+          ...parseHtmlToDocxParagraphs(technique),
+          new Paragraph({ text: "", spacing: { after: 200 } })
+        ] : []),
+
+        // RESULTAT (Findings)
+        new Paragraph({
+          children: [new TextRun({ text: "Résultat :", bold: true, underline: { type: "single" }, size: 24 })],
+          spacing: { after: 100 }
+        }),
+        ...parseHtmlToDocxParagraphs(findings || reportContent),
+
+        new Paragraph({ text: "", spacing: { after: 300 } }),
+
+        // CONCLUSION
+        ...(conclusion ? [
+          createConclusionBox(conclusion)
+        ] : [])
+      ],
+    }],
+  });
+
+  // Generate and download
+  Packer.toBlob(doc).then((blob) => {
+    const filename = `${lastName}_${firstName}_${studyDescription || 'Report'}.docx`;
+    saveAs(blob, filename);
+  });
+};
+
+// Helper to fetch image from URL/Base64
+const fetchImage = async (url) => {
+  const response = await fetch(url);
+  const blob = await response.blob();
+  return await blob.arrayBuffer();
+};
+
+// Helper to create Patient Table
+const createPatientTable = (lastName, firstName, age) => {
+  return new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: {
+      top: { style: BorderStyle.SINGLE, size: 2 },
+      bottom: { style: BorderStyle.SINGLE, size: 2 },
+      left: { style: BorderStyle.SINGLE, size: 2 },
+      right: { style: BorderStyle.SINGLE, size: 2 },
+    },
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            children: [new Paragraph({
+              children: [new TextRun({ text: "IDENTIFICATION  DU PATIENT", bold: true, size: 24 })],
+              alignment: AlignmentType.CENTER
+            })],
+            columnSpan: 3,
+            borders: { bottom: { style: BorderStyle.SINGLE, size: 2 } }
+          }),
+        ],
+      }),
+      new TableRow({
+        children: [
+          new TableCell({
+            children: [new Paragraph({
+              children: [
+                new TextRun({ text: "Nom: ", bold: true, size: 24 }),
+                new TextRun({ text: lastName, bold: true, size: 24 })
+              ]
+            })],
+            width: { size: 40, type: WidthType.PERCENTAGE },
+            borders: { top: { style: BorderStyle.NONE }, bottom: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE } }
+          }),
+          new TableCell({
+            children: [new Paragraph({
+              children: [
+                new TextRun({ text: "Prénom : ", bold: true, size: 24 }),
+                new TextRun({ text: firstName, bold: true, size: 24 })
+              ]
+            })],
+            width: { size: 40, type: WidthType.PERCENTAGE },
+            borders: { top: { style: BorderStyle.NONE }, bottom: { style: BorderStyle.NONE }, left: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE } }
+          }),
+          new TableCell({
+            children: [new Paragraph({
+              children: [
+                new TextRun({ text: "Age : ", bold: true, size: 24 }),
+                new TextRun({ text: age ? `${age} ANS` : '', bold: true, size: 24 })
+              ]
+            })],
+            width: { size: 20, type: WidthType.PERCENTAGE },
+            borders: { top: { style: BorderStyle.NONE }, bottom: { style: BorderStyle.NONE }, left: { style: BorderStyle.NONE } }
+          }),
+        ],
+      }),
+    ],
+  });
+};
+
+// Helper to create Exam Title
+const createExamTitle = (title) => {
+  return new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: {
+      top: { style: BorderStyle.SINGLE, size: 2 },
+      bottom: { style: BorderStyle.SINGLE, size: 2 },
+      left: { style: BorderStyle.SINGLE, size: 2 },
+      right: { style: BorderStyle.SINGLE, size: 2 },
+    },
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            children: [new Paragraph({
+              children: [new TextRun({ text: `COMPTE RENDU DE ${title.toUpperCase()}`, bold: true, size: 24 })],
+              alignment: AlignmentType.CENTER
+            })],
+          })
+        ]
+      })
+    ]
+  });
+};
+
+// Helper to create Conclusion Box
+const createConclusionBox = (conclusionHtml) => {
+  return new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: {
+      top: { style: BorderStyle.SINGLE, size: 2 },
+      bottom: { style: BorderStyle.SINGLE, size: 2 },
+      left: { style: BorderStyle.SINGLE, size: 2 },
+      right: { style: BorderStyle.SINGLE, size: 2 },
+    },
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            children: [
+              new Paragraph({
+                children: [new TextRun({ text: "Conclusion :", bold: true, underline: { type: "single" }, italics: true, size: 24 })],
+                spacing: { after: 100 }
+              }),
+              ...parseHtmlToDocxParagraphs(conclusionHtml, true) // Pass true for conclusion mode (centered/bold if needed)
+            ],
+            verticalAlign: VerticalAlign.CENTER,
+            margins: { top: 100, bottom: 100, left: 100, right: 100 }
+          })
+        ]
+      })
+    ]
+  });
+};
+
+// HTML Parser
+function parseHtmlToDocxParagraphs(htmlContent, isConclusion = false) {
+  if (!htmlContent || !htmlContent.trim()) return [];
+
+  const paragraphs = [];
+
+  if (typeof document !== 'undefined') {
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = htmlContent;
+
+    const processNode = (node, parentStyles = {}) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = node.textContent;
+        if (text) {
+          // Default size 24 (12pt) unless specified
+          const size = parentStyles.size || 24;
+          return new TextRun({ text, ...parentStyles, size });
+        }
+        return null;
+      }
+
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const tagName = node.tagName.toLowerCase();
+        const newStyles = { ...parentStyles };
+
+        // Handle styles
+        if (node.style.fontSize) {
+          // Convert px to half-points (docx uses half-points, e.g. 24 = 12pt)
+          const px = parseInt(node.style.fontSize);
+          if (!isNaN(px)) {
+            newStyles.size = px * 2; // Approximate conversion: 1px ~= 0.75pt, but usually 16px = 12pt = 24 half-points. 
+            // Actually Tiptap uses px. Word uses half-points.
+            // 16px (web) ~= 12pt (word) = 24 half-points.
+            // So factor is 1.5? No, 16 * 1.5 = 24. 
+            // Let's use 1.5 multiplier for px to half-points.
+            newStyles.size = Math.round(px * 1.5);
+          }
+        }
+        if (node.style.fontWeight === 'bold') newStyles.bold = true;
+        if (node.style.fontStyle === 'italic') newStyles.italics = true;
+        if (node.style.textDecoration === 'underline') newStyles.underline = {};
+
+        // Handle tags
+        if (tagName === 'strong' || tagName === 'b') newStyles.bold = true;
+        if (tagName === 'em' || tagName === 'i') newStyles.italics = true;
+        if (tagName === 'u') newStyles.underline = {};
+
+        // Conclusion specific: usually bold and centered
+        if (isConclusion) {
+          newStyles.bold = true;
+        }
+
+        const runs = [];
+        Array.from(node.childNodes).forEach(child => {
+          const run = processNode(child, newStyles);
+          if (run) {
+            if (Array.isArray(run)) runs.push(...run);
+            else runs.push(run);
+          }
+        });
+
+        return runs;
+      }
+      return null;
+    };
+
+    Array.from(tempDiv.children).forEach(child => {
+      const tagName = child.tagName.toLowerCase();
+      const runs = processNode(child);
+
+      if (runs && runs.length > 0) {
+        let alignment = AlignmentType.LEFT;
+        if (child.style.textAlign === 'center') alignment = AlignmentType.CENTER;
+        if (child.style.textAlign === 'right') alignment = AlignmentType.RIGHT;
+        if (child.style.textAlign === 'justify') alignment = AlignmentType.JUSTIFIED;
+
+        if (isConclusion) alignment = AlignmentType.CENTER;
+
+        if (tagName === 'ul' || tagName === 'ol') {
+          // Handle lists (simplified: just paragraphs with bullets)
+          // Ideally we should process LIs
+          Array.from(child.children).forEach(li => {
+            const liRuns = processNode(li);
+            if (liRuns) {
+              paragraphs.push(new Paragraph({
+                children: liRuns,
+                bullet: { level: 0 },
+                spacing: { after: 100 }
+              }));
+            }
+          });
+        } else {
+          paragraphs.push(new Paragraph({
+            children: runs,
+            alignment: alignment,
+            spacing: { after: 100 }
+          }));
+        }
+      }
+    });
+
+    // Fallback for text without tags
+    if (paragraphs.length === 0 && tempDiv.textContent.trim()) {
+      paragraphs.push(new Paragraph({
+        children: [new TextRun({ text: tempDiv.textContent.trim(), size: 24, bold: isConclusion })],
+        alignment: isConclusion ? AlignmentType.CENTER : AlignmentType.LEFT
+      }));
+    }
+  }
+
+  return paragraphs;
 }
 
 /**
- * Wrapper function to match the signature used in reporting page
+ * Wrapper function
  */
 export const exportToWord = async (
   reportContent,
@@ -539,49 +444,88 @@ export const exportToWord = async (
   patientID,
   studyDescription,
   studyDate,
-  hospitalName,
-  footerText
+  hospitalName, // Legacy
+  footerText, // Legacy
+  clinicData = null // New
 ) => {
-  // Parse sections from combined content
   const parser = new DOMParser();
   const doc = parser.parseFromString(reportContent, 'text/html');
-  
+
   const techniqueDiv = doc.querySelector('.technique');
   const findingsDiv = doc.querySelector('.findings');
   const conclusionDiv = doc.querySelector('.conclusion');
 
-  const techniqueContent = techniqueDiv ? techniqueDiv.innerHTML : '';
-  const findingsContent = findingsDiv ? findingsDiv.innerHTML : reportContent;
-  const conclusionContent = conclusionDiv ? conclusionDiv.innerHTML : '';
-
   const reportData = {
     patientName,
     patientId: patientID,
-    patientAge: null,
+    patientAge: null, // Need to pass age if available
     studyDescription,
     studyDate,
     modality: '',
-    reportContent: findingsContent,
-    findings: findingsContent,
-    technique: techniqueContent,
-    conclusion: conclusionContent,
-    doctorName: ''
+    reportContent: findingsDiv ? findingsDiv.innerHTML : reportContent,
+    findings: findingsDiv ? findingsDiv.innerHTML : reportContent,
+    technique: techniqueDiv ? techniqueDiv.innerHTML : '',
+    conclusion: conclusionDiv ? conclusionDiv.innerHTML : '',
   };
 
-  const settings = {
-    hospitalName,
-    footerText
-  };
-
-  return downloadWordReport(reportData, settings);
+  return downloadWordReport(reportData, clinicData, { hospitalName, footerText });
 };
 
 /**
- * Get exam template content (empty by default - user creates their own)
+ * Generate Word document from report and clinic data (for dashboard downloads)
  */
-export const getExamTemplate = (modality, studyDescription) => {
-  return {
-    findings: '',
-    conclusion: ''
+export const generateWordDocument = async (report, clinic) => {
+  // Parse sections from combined content
+  let techniqueContent = '';
+  let findingsContent = '';
+  let conclusionContent = '';
+
+  if (typeof document !== 'undefined' && report.content) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(report.content, 'text/html');
+
+    const techniqueDiv = doc.querySelector('.technique');
+    const findingsDiv = doc.querySelector('.findings');
+    const conclusionDiv = doc.querySelector('.conclusion');
+
+    techniqueContent = techniqueDiv ? techniqueDiv.innerHTML : '';
+    findingsContent = findingsDiv ? findingsDiv.innerHTML : report.content;
+    conclusionContent = conclusionDiv ? conclusionDiv.innerHTML : report.conclusion || '';
+  } else {
+    // Fallback if document is not available
+    findingsContent = report.content || '';
+    conclusionContent = report.conclusion || '';
+  }
+
+  const reportData = {
+    patientName: report.patientName,
+    patientId: report.patientId,
+    patientAge: null,
+    studyDescription: report.studyDescription,
+    studyDate: report.studyDate,
+    modality: report.modality,
+    reportContent: report.content,
+    findings: findingsContent,
+    conclusion: conclusionContent,
+    technique: techniqueContent
   };
+
+  const clinicData = clinic ? {
+    name: clinic.name,
+    nameArabic: clinic.nameArabic,
+    address: clinic.address,
+    phone: clinic.phone,
+    email: clinic.email,
+    headerContent: clinic.headerContent,
+    footerContent: clinic.footerContent
+  } : null;
+
+  const settings = {
+    hospitalName: clinic?.name || "Cabinet D'imagerie Médicale",
+    footerText: clinic?.address || "Cité Bousrour en face les pompiers Mazouna Relizane"
+  };
+
+  return downloadWordReport(reportData, clinicData, settings);
 };
+
+

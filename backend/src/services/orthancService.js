@@ -1,11 +1,34 @@
 const fetch = require('node-fetch');
+const { decrypt } = require('../utils/encryption');
 
 class OrthancService {
-  constructor() {
-    this.baseUrl = process.env.ORTHANC_URL;
-    this.username = process.env.ORTHANC_USERNAME;
-    this.password = process.env.ORTHANC_PASSWORD;
-    this.authHeader = 'Basic ' + Buffer.from(`${this.username}:${this.password}`).toString('base64');
+  constructor(config = null) {
+    if (config) {
+      this.baseUrl = config.url;
+      this.username = config.username;
+      this.password = config.password;
+      this.authHeader = 'Basic ' + Buffer.from(`${this.username}:${this.password}`).toString('base64');
+    } else {
+      this.baseUrl = process.env.ORTHANC_URL;
+      this.username = process.env.ORTHANC_USERNAME;
+      this.password = process.env.ORTHANC_PASSWORD;
+      this.authHeader = 'Basic ' + Buffer.from(`${this.username}:${this.password}`).toString('base64');
+    }
+  }
+
+  static fromClinic(clinic) {
+    if (!clinic.orthancUrl) {
+      return new OrthancService();
+    }
+    let decryptedPassword = '';
+    if (clinic.orthancPassword) {
+      decryptedPassword = decrypt(clinic.orthancPassword);
+    }
+    return new OrthancService({
+      url: clinic.orthancUrl,
+      username: clinic.orthancUsername,
+      password: decryptedPassword
+    });
   }
 
   async makeRequest(endpoint, options = {}) {
@@ -31,21 +54,45 @@ class OrthancService {
     }
   }
 
+  // --- UPDATED FIND STUDIES ---
   async findStudies(query = {}) {
     const searchQuery = {
       Level: 'Study',
       Expand: true,
-      Query: {
-        ...query
-      }
+      Query: { ...query }
     };
 
+    // 1. Get the list of studies
     const studies = await this.makeRequest('/tools/find', {
       method: 'POST',
       body: JSON.stringify(searchQuery)
     });
 
-    return studies;
+    // 2. "Hydrate" missing data (Modality)
+    // Since ModalitiesInStudy is missing, we fetch the first Series to get the Modality.
+    const hydratedStudies = await Promise.all(studies.map(async (study) => {
+      // Check if we need to fetch modality
+      const hasModality = study.ModalitiesInStudy || (study.MainDicomTags && study.MainDicomTags.Modality);
+      
+      if (!hasModality && study.Series && study.Series.length > 0) {
+        try {
+          // Fetch the details of the FIRST series in the study
+          const firstSeriesId = study.Series[0];
+          const seriesData = await this.makeRequest(`/series/${firstSeriesId}`);
+          
+          // Inject the found modality into the study object's tags so parseStudy can find it
+          if (seriesData.MainDicomTags && seriesData.MainDicomTags.Modality) {
+            study.MainDicomTags = study.MainDicomTags || {};
+            study.MainDicomTags.Modality = seriesData.MainDicomTags.Modality;
+          }
+        } catch (err) {
+          console.warn(`Could not fetch series for study ${study.ID} to determine modality.`);
+        }
+      }
+      return study;
+    }));
+
+    return hydratedStudies;
   }
 
   async getStudyDetails(studyId) {
@@ -62,9 +109,7 @@ class OrthancService {
 
   async searchStudiesByDate(startDate, endDate) {
     const dateQuery = {};
-    
     if (startDate && endDate) {
-      // DICOM date format: YYYYMMDD
       const start = startDate.replace(/-/g, '');
       const end = endDate.replace(/-/g, '');
       dateQuery.StudyDate = `${start}-${end}`;
@@ -72,7 +117,6 @@ class OrthancService {
       const start = startDate.replace(/-/g, '');
       dateQuery.StudyDate = `${start}-`;
     }
-
     return await this.findStudies(dateQuery);
   }
 
@@ -88,49 +132,67 @@ class OrthancService {
     });
   }
 
+  // --- UPDATED PARSER ---
   parseStudy(orthancStudy) {
     const mainDicomTags = orthancStudy.MainDicomTags || {};
     const patientMainDicomTags = orthancStudy.PatientMainDicomTags || {};
 
+    // 1. Extract Modality (Now populated by findStudies if missing)
+    let modality = orthancStudy.ModalitiesInStudy || mainDicomTags.ModalitiesInStudy || mainDicomTags.Modality || [];
+    
+    if (Array.isArray(modality)) {
+      modality = modality.join('/');
+    }
+
+    // 2. Extract/Calculate Age
+    let age = patientMainDicomTags.PatientAge || mainDicomTags.PatientAge;
+    
+    // Only calculate if age tag is missing AND we have a BirthDate
+    if ((!age || age === '000Y') && patientMainDicomTags.PatientBirthDate) {
+        age = this.calculateAge(patientMainDicomTags.PatientBirthDate, mainDicomTags.StudyDate);
+    }
+
+    // Handle empty age specifically
+    if (!age) {
+        age = ''; // Return empty string instead of null/undefined to be safe for frontend
+    }
+
     return {
       studyInstanceUid: mainDicomTags.StudyInstanceUID || '',
       orthancId: orthancStudy.ID || '',
-      patientName: patientMainDicomTags.PatientName || 'Unknown',
+      patientName: (patientMainDicomTags.PatientName || 'Unknown').replace(/\^/g, ' ').trim(),
       patientId: patientMainDicomTags.PatientID || '',
       patientBirthDate: patientMainDicomTags.PatientBirthDate || '',
-      patientAge: this.calculateAge(patientMainDicomTags.PatientBirthDate, mainDicomTags.StudyDate),
+      patientAge: age,
       studyDate: this.parseDicomDate(mainDicomTags.StudyDate),
       studyTime: mainDicomTags.StudyTime || '',
       studyDescription: mainDicomTags.StudyDescription || '',
-      modality: mainDicomTags.ModalitiesInStudy || mainDicomTags.Modality || '',
+      modality: modality || 'Unknown', 
       accessionNumber: mainDicomTags.AccessionNumber || '',
-      numberOfSeries: orthancStudy.Series?.length || 0,
+      numberOfSeries: orthancStudy.Series ? orthancStudy.Series.length : 0,
       institutionName: mainDicomTags.InstitutionName || ''
     };
   }
 
   parseDicomDate(dicomDate) {
-    if (!dicomDate) return null;
-    
-    // DICOM date format: YYYYMMDD
+    if (!dicomDate || dicomDate.length !== 8) return null;
     const year = dicomDate.substring(0, 4);
     const month = dicomDate.substring(4, 6);
     const day = dicomDate.substring(6, 8);
-    
     return `${year}-${month}-${day}`;
   }
 
   calculateAge(birthDate, studyDate) {
-    if (!birthDate) return null;
-    
-    // Parse birth date (YYYYMMDD)
+    // Safety check for empty birthdate strings
+    if (!birthDate || birthDate.length !== 8) return null;
+
     const birthYear = parseInt(birthDate.substring(0, 4));
     const birthMonth = parseInt(birthDate.substring(4, 6));
     const birthDay = parseInt(birthDate.substring(6, 8));
-    
-    // Use study date if available, otherwise use today
+
     let refYear, refMonth, refDay;
-    if (studyDate) {
+    
+    if (studyDate && studyDate.length === 8) {
       refYear = parseInt(studyDate.substring(0, 4));
       refMonth = parseInt(studyDate.substring(4, 6));
       refDay = parseInt(studyDate.substring(6, 8));
@@ -140,17 +202,14 @@ class OrthancService {
       refMonth = today.getMonth() + 1;
       refDay = today.getDate();
     }
-    
-    // Calculate age
+
     let age = refYear - birthYear;
-    
-    // Adjust if birthday hasn't occurred yet this year
     if (refMonth < birthMonth || (refMonth === birthMonth && refDay < birthDay)) {
       age--;
     }
-    
-    return age > 0 ? age : null;
+
+    return age >= 0 ? `${age}Y` : null;
   }
 }
 
-module.exports = new OrthancService();
+module.exports = OrthancService;

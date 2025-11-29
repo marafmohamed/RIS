@@ -15,6 +15,21 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 15,
   },
+  header: {
+    marginBottom: 20,
+    borderBottom: '1pt solid #CCCCCC',
+    paddingBottom: 10,
+  },
+  headerText: {
+    fontSize: 10,
+    textAlign: 'center',
+    marginBottom: 2,
+  },
+  footerText: {
+    fontSize: 9,
+    textAlign: 'center',
+    color: '#666666',
+  },
   tableHeader: {
     backgroundColor: '#E8E8E8',
     padding: 8,
@@ -123,13 +138,10 @@ const ReportPDF = ({ reportData, settings = {} }) => {
     technique
   } = reportData;
 
-  const hospitalName = settings.hospitalName || "l'EPH MAZOUNA";
-  const footerText = settings.footerText || "Cité Bousrour en face les pompiers Mazouna Relizane   Tel 0779 00 46 56   حي بوسرور مقابل الحماية المدنية مازونة غليزان";
-
   // Parse patient name - handle both ^ and space separators
   let lastName = 'N/A';
   let firstName = 'N/A';
-  
+
   if (patientName) {
     if (patientName.includes('^')) {
       // DICOM format: LAST^FIRST
@@ -158,20 +170,20 @@ const ReportPDF = ({ reportData, settings = {} }) => {
   // Parse HTML to structured paragraphs with alignment
   const parseHtmlToStructuredContent = (html) => {
     if (!html || !html.trim()) return [];
-    
+
     const paragraphs = [];
-    
+
     if (typeof document !== 'undefined') {
       const temp = document.createElement('div');
       temp.innerHTML = html || '';
-      
+
       const getAlignment = (element) => {
         const textAlign = element.style.textAlign || element.getAttribute('data-text-align');
         return textAlign || 'left';
       };
-      
+
       const children = Array.from(temp.children);
-      
+
       if (children.length === 0) {
         // Plain text - use textContent to strip all HTML tags
         const text = temp.textContent || '';
@@ -184,9 +196,9 @@ const ReportPDF = ({ reportData, settings = {} }) => {
           // Use textContent to get pure text without HTML tags
           const text = child.textContent?.trim() || '';
           const alignment = getAlignment(child);
-          
+
           if (!text) return;
-          
+
           if (tagName === 'ul') {
             // Bullet list
             const items = Array.from(child.getElementsByTagName('li'));
@@ -219,65 +231,60 @@ const ReportPDF = ({ reportData, settings = {} }) => {
         .replace(/<li>/gi, '• ')
         .replace(/<\/li>/gi, '\n')
         .replace(/<[^>]*>/g, '');
-      
+
       const lines = cleanText.split('\n').filter(line => line.trim());
       lines.forEach(line => {
         paragraphs.push({ text: line.trim(), alignment: 'left', isList: false });
       });
     }
-    
+
     return paragraphs;
   };
 
   const findingsParagraphs = parseHtmlToStructuredContent(findings);
   const techniqueParagraphs = technique ? parseHtmlToStructuredContent(technique) : [];
   const conclusionParagraphs = conclusion ? parseHtmlToStructuredContent(conclusion) : [];
-  
-  const conclusionText = conclusionParagraphs.length > 0 
-    ? conclusionParagraphs 
+
+  const conclusionText = conclusionParagraphs.length > 0
+    ? conclusionParagraphs
     : [{ text: "", alignment: 'center', isList: false }];
+
+  const {
+    hospitalName = "l'EPH MAZOUNA",
+    footerText = "Cité Bousrour en face les pompiers Mazouna Relizane   Tel 0779 00 46 56   حي بوسرور مقابل الحماية المدنية مازونة غليزان",
+    headerContent,
+    footerContent
+  } = settings;
+
+  const headerParagraphs = headerContent ? parseHtmlToStructuredContent(headerContent) : [];
+  const footerParagraphs = footerContent ? parseHtmlToStructuredContent(footerContent) : [];
 
   return (
     <Document>
       <Page size="A4" style={styles.page}>
+        {/* Header */}
+        <View style={styles.header}>
+          {headerParagraphs.length > 0 ? (
+            headerParagraphs.map((para, i) => (
+              <Text key={i} style={{ ...styles.headerText, textAlign: para.alignment }}>{para.text}</Text>
+            ))
+          ) : (
+            <Text style={styles.titleSub}>
+              Examen réalisé au niveau de {hospitalName}
+            </Text>
+          )}
+        </View>
+
         {/* Date */}
         <Text style={styles.dateRight}>{reportDate}</Text>
-
-        {/* Patient Info Table */}
-        <View style={{ border: '1pt solid black', marginBottom: 10 }}>
-          <View style={styles.tableHeader}>
-            <Text>IDENTIFICATION DU PATIENT</Text>
-          </View>
-          <View style={styles.tableRow}>
-            <View style={styles.tableCell}>
-              <Text><Text style={{ fontWeight: 'bold' }}>Nom : </Text>{lastName}</Text>
-            </View>
-            <View style={styles.tableCell}>
-              <Text><Text style={{ fontWeight: 'bold' }}>Prénom : </Text>{firstName}</Text>
-            </View>
-            <View style={styles.tableCell}>
-              <Text><Text style={{ fontWeight: 'bold' }}>Age : </Text>{patientAge ? `${patientAge} ans` : 'N/A'}</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Title Block */}
-        <View style={styles.titleBox}>
-          <Text style={styles.titleMain}>
-            INTERPRETATION DE {studyDescription?.toUpperCase() || modality?.toUpperCase() || 'IMAGERIE MEDICALE'}
-          </Text>
-          <Text style={styles.titleSub}>
-            Examen réalisé au niveau de {hospitalName}
-          </Text>
-        </View>
 
         {/* Technique Section */}
         {techniqueParagraphs.length > 0 && (
           <View style={{ marginBottom: 15 }}>
-            <Text style={styles.sectionTitle}>TECHNIQUE:</Text>
+            <Text style={styles.sectionTitle}>Technique d'examen :</Text>
             {techniqueParagraphs.map((para, index) => (
-              <Text 
-                key={index} 
+              <Text
+                key={index}
                 style={{
                   ...styles.paragraph,
                   textAlign: para.alignment,
@@ -290,30 +297,33 @@ const ReportPDF = ({ reportData, settings = {} }) => {
           </View>
         )}
 
-        {/* Results - User creates their own section titles */}
-        {findingsParagraphs.length > 0 ? (
-          findingsParagraphs.map((para, index) => (
-            <Text 
-              key={index} 
-              style={{
-                ...styles.paragraph,
-                textAlign: para.alignment,
-                marginLeft: para.isList ? 20 : 0
-              }}
-            >
-              {para.text}
-            </Text>
-          ))
-        ) : (
-          <Text style={styles.paragraph}>[Contenu du rapport]</Text>
-        )}
+        {/* Results/Findings Section */}
+        <View style={{ marginBottom: 15 }}>
+          <Text style={styles.sectionTitle}>Résultat :</Text>
+          {findingsParagraphs.length > 0 ? (
+            findingsParagraphs.map((para, index) => (
+              <Text
+                key={index}
+                style={{
+                  ...styles.paragraph,
+                  textAlign: para.alignment,
+                  marginLeft: para.isList ? 20 : 0
+                }}
+              >
+                {para.text}
+              </Text>
+            ))
+          ) : (
+            <Text style={styles.paragraph}>[Contenu du rapport]</Text>
+          )}
+        </View>
 
         {/* Conclusion */}
         <View style={styles.conclusionBox}>
-          <Text style={styles.conclusionTitle}>CONCLUSION :</Text>
+          <Text style={styles.conclusionTitle}>Conclusion :</Text>
           {conclusionText.map((para, index) => (
-            <Text 
-              key={index} 
+            <Text
+              key={index}
               style={{
                 ...styles.conclusionText,
                 textAlign: para.alignment || 'center'
@@ -324,15 +334,19 @@ const ReportPDF = ({ reportData, settings = {} }) => {
           ))}
         </View>
 
-        {/* Footer - Fixed at bottom */}
+        {/* Footer */}
         <View style={styles.footer} fixed>
-          <Text>{footerText}</Text>
+          {footerParagraphs.length > 0 ? (
+            footerParagraphs.map((para, i) => (
+              <Text key={i} style={{ ...styles.footerText, textAlign: para.alignment }}>{para.text}</Text>
+            ))
+          ) : (
+            <Text style={styles.footerText}>{footerText}</Text>
+          )}
+          <Text style={styles.pageNumber} render={({ pageNumber, totalPages }) => (
+            `${pageNumber} / ${totalPages}`
+          )} />
         </View>
-
-        {/* Page Numbers */}
-        <Text style={styles.pageNumber} fixed render={({ pageNumber, totalPages }) => 
-          `Page ${pageNumber} / ${totalPages}`
-        } />
       </Page>
     </Document>
   );
@@ -343,13 +357,13 @@ const ReportPDF = ({ reportData, settings = {} }) => {
  */
 export const downloadPDFReport = async (reportData, settings = {}) => {
   const blob = await pdf(<ReportPDF reportData={reportData} settings={settings} />).toBlob();
-  
+
   const nameParts = reportData.patientName?.split('^') || ['', ''];
   const lastName = nameParts[0] || 'Report';
   const firstName = nameParts[1] || '';
-  
+
   const filename = `${lastName}_${firstName}_${reportData.studyDescription || 'Report'}_${new Date().toISOString().split('T')[0]}.pdf`;
-  
+
   // Create download link
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -373,7 +387,7 @@ export const exportToPDF = async (
   let techniqueContent = '';
   let findingsContent = reportContent;
   let conclusionContent = '';
-  
+
   if (parser) {
     const doc = parser.parseFromString(reportContent, 'text/html');
     const techniqueDiv = doc.querySelector('.technique');
@@ -404,3 +418,53 @@ export const exportToPDF = async (
 
   return downloadPDFReport(reportData, settings);
 };
+
+/**
+ * Generate PDF from report and clinic data (for dashboard downloads)
+ */
+export const generatePDF = async (report, clinic) => {
+  // Parse sections from combined content
+  let techniqueContent = '';
+  let findingsContent = '';
+  let conclusionContent = '';
+
+  if (typeof document !== 'undefined' && report.content) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(report.content, 'text/html');
+
+    const techniqueDiv = doc.querySelector('.technique');
+    const findingsDiv = doc.querySelector('.findings');
+    const conclusionDiv = doc.querySelector('.conclusion');
+
+    techniqueContent = techniqueDiv ? techniqueDiv.innerHTML : '';
+    findingsContent = findingsDiv ? findingsDiv.innerHTML : report.content;
+    conclusionContent = conclusionDiv ? conclusionDiv.innerHTML : report.conclusion || '';
+  } else {
+    // Fallback if document is not available
+    findingsContent = report.content || '';
+    conclusionContent = report.conclusion || '';
+  }
+
+  const reportData = {
+    patientName: report.patientName,
+    patientId: report.patientId,
+    patientAge: null,
+    studyDescription: report.studyDescription,
+    studyDate: report.studyDate,
+    modality: report.modality,
+    technique: techniqueContent,
+    findings: findingsContent,
+    conclusion: conclusionContent
+  };
+
+  const settings = {
+    hospitalName: clinic?.name || "Cabinet D'imagerie Médicale",
+    footerText: clinic?.address || "Cité Bousrour en face les pompiers Mazouna Relizane   Tel 0779 00 46 56",
+    headerContent: clinic?.headerContent,
+    footerContent: clinic?.footerContent
+  };
+
+  return downloadPDFReport(reportData, settings);
+};
+
+

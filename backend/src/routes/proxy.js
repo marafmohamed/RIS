@@ -5,6 +5,8 @@ const NodeCache = require('node-cache');
 const dns = require('dns').promises;
 const stream = require('stream');
 const { promisify } = require('util');
+const Clinic = require('../models/Clinic');
+const { decrypt } = require('../utils/encryption');
 
 const router = express.Router();
 const pipeline = promisify(stream.pipeline);
@@ -43,17 +45,45 @@ const DNS_CACHE_TTL = 5 * 60 * 1000;
 // HTTP Agent for connection pooling
 const http = require('http');
 const https = require('https');
-const ORTHANC_URL = process.env.ORTHANC_URL;
-const ORTHANC_AUTH = 'Basic ' + Buffer.from(`${process.env.ORTHANC_USERNAME}:${process.env.ORTHANC_PASSWORD}`).toString('base64');
 
-const keepAliveAgent = new (ORTHANC_URL.startsWith('https') ? https : http).Agent({
-  keepAlive: true,
-  keepAliveMsecs: 30000,
-  maxSockets: 100, // Increased for parallel requests
-  maxFreeSockets: 20,
-  timeout: 120000, // 2 minutes for large frames
-  scheduling: 'lifo' // Reuse most recent connections
-});
+// Helper to get Orthanc config for a request
+async function getOrthancConfig(req) {
+  let clinicId = req.query.clinicId || req.headers['x-clinic-id'];
+
+  // Default config from env
+  let config = {
+    url: process.env.ORTHANC_URL,
+    username: process.env.ORTHANC_USERNAME,
+    password: process.env.ORTHANC_PASSWORD
+  };
+
+  if (clinicId) {
+    try {
+      const clinic = await Clinic.findById(clinicId);
+      if (clinic && clinic.orthancUrl) {
+        config = {
+          url: clinic.orthancUrl,
+          username: clinic.orthancUsername,
+          password: decrypt(clinic.orthancPassword)
+        };
+      }
+    } catch (error) {
+      console.error('Error fetching clinic config:', error);
+    }
+  }
+
+  const auth = 'Basic ' + Buffer.from(`${config.username}:${config.password}`).toString('base64');
+  const agent = new (config.url.startsWith('https') ? https : http).Agent({
+    keepAlive: true,
+    keepAliveMsecs: 30000,
+    maxSockets: 100,
+    maxFreeSockets: 20,
+    timeout: 120000,
+    scheduling: 'lifo'
+  });
+
+  return { ...config, auth, agent };
+}
 
 // Retry fetch with exponential backoff
 async function fetchWithRetry(url, options, maxRetries = 3) {
@@ -118,162 +148,25 @@ const logPerformance = (label) => (req, res, next) => {
   next();
 };
 
-// Verify token
-const verifyTokenFromQuery = (req, res, next) => {
-  try {
-    const token = req.query.token;
-    if (!token) {
-      console.error('❌ No token provided');
-      return res.status(401).send('Authentication required');
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch (error) {
-    console.error('❌ Token verification failed:', error.message);
-    return res.status(401).send('Invalid or expired token');
-  }
-};
-
-console.log(`🔧 OHIF Proxy initialized with Orthanc URL: ${ORTHANC_URL}`);
-
-// Pre-warm cache with common OHIF bundles on startup
-async function prewarmCache() {
-  console.log('🔥 Pre-warming cache with common OHIF bundles...');
-
-  // List of common bundles that are the same for all users
-  const commonBundles = [
-    'viewer', // Main viewer HTML
-    'app-config.js', // Configuration
-    'app.bundle.b34f32c5020ee27ad26.js', // Main app bundle (adjust the hash to match your version)
-    // Add more common bundles here as you identify them
-  ];
-
-  const prewarmStart = Date.now();
-  let successCount = 0;
-  let totalSize = 0;
-
-  for (const bundle of commonBundles) {
-    try {
-      const url = `${ORTHANC_URL}/ohif/${bundle}`;
-      console.log(`   📦 Fetching: ${bundle}`);
-
-      const response = await fetchWithRetry(url, {
-        headers: { 'Authorization': ORTHANC_AUTH },
-        agent: keepAliveAgent
-      }, 2); // Only 2 retries for startup
-
-      if (response.ok) {
-        const contentType = response.headers.get('content-type') || 'application/octet-stream';
-        const body = await response.buffer();
-
-        // Handle URL rewriting for text files
-        if (bundle.includes('.js') || bundle.includes('.html') || bundle === 'viewer') {
-          let content = body.toString('utf8');
-
-          // Apply URL rewriting
-          content = content
-            .replace(/<base href="\/ohif\/?"/g, '<base href="/api/proxy/ohif/"')
-            .replace(/https?:\/\/[^/'"]+\/ohif/g, '/api/proxy/ohif')
-            .replace(/https?:\/\/[^/'"]+\/dicom-web/g, '/api/proxy/dicom-web')
-            .replace(/https?:\/\/[^/'"]+\/(studies|series|instances)/g, '/api/proxy/orthanc/$1')
-            .replace(/"\/ohif\//g, '"/api/proxy/ohif/')
-            .replace(/'\/ohif\//g, "'/api/proxy/ohif/")
-            .replace(/"\/dicom-web/g, '"/api/proxy/dicom-web')
-            .replace(/'\/dicom-web/g, "'/api/proxy/dicom-web")
-            .replace(/url:\s*['"]\/dicom-web['"]/g, "url: '/api/proxy/dicom-web'")
-            .replace(/url:\s*['"]\/studies['"]/g, "url: '/api/proxy/orthanc/studies'")
-            .replace(/(['"])\/dicom-web\//g, "$1/api/proxy/dicom-web/");
-
-          // Cache the rewritten content
-          const cacheKey = `ohif-${bundle}`;
-          resourceCache.set(cacheKey, {
-            contentType,
-            cacheControl: 'public, max-age=31536000, immutable',
-            body: Buffer.from(content, 'utf8')
-          }, 86400);
-
-          // Special handling for config
-          if (bundle.includes('app-config.js')) {
-            configCache = content;
-            configCacheTime = Date.now();
-          }
-        } else {
-          // Binary files - cache as-is
-          const cacheKey = `ohif-${bundle}`;
-          resourceCache.set(cacheKey, {
-            contentType,
-            cacheControl: 'public, max-age=31536000, immutable',
-            body
-          }, 86400);
-        }
-
-        totalSize += body.length;
-        successCount++;
-        console.log(`   ✅ Cached ${bundle} (${(body.length / 1024).toFixed(2)}KB)`);
-      } else {
-        console.warn(`   ⚠️  Failed to fetch ${bundle}: ${response.status}`);
-      }
-    } catch (error) {
-      console.warn(`   ⚠️  Failed to prewarm ${bundle}: ${error.message}`);
-    }
-  }
-
-  const duration = Date.now() - prewarmStart;
-  console.log(`🔥 Cache prewarming complete: ${successCount}/${commonBundles.length} bundles cached (${(totalSize / 1024 / 1024).toFixed(2)}MB) in ${duration}ms`);
-
-  // Schedule next prewarm in 1 hour
-  setTimeout(prewarmCache, 60 * 60 * 1000);
-}
-
-// Auto-discover and cache bundles from first real user request
-let bundleDiscoveryEnabled = true;
-const discoveredBundles = new Set();
-
-function recordBundleRequest(path) {
-  if (bundleDiscoveryEnabled && path.includes('.bundle.') && path.endsWith('.js')) {
-    if (!discoveredBundles.has(path)) {
-      discoveredBundles.add(path);
-      console.log(`📝 Discovered new bundle: ${path}`);
-
-      // After discovering 10 bundles, log them for manual addition
-      if (discoveredBundles.size >= 10) {
-        console.log(`\n🎯 DISCOVERED COMMON BUNDLES - Add these to prewarmCache():`);
-        discoveredBundles.forEach(bundle => console.log(`    '${bundle}',`));
-        console.log('');
-        bundleDiscoveryEnabled = false; // Stop discovery after first batch
-      }
-    }
-  }
-}
-
-// Start prewarming on module load (delayed to not block startup)
-setTimeout(() => {
-  prewarmCache().catch(err => {
-    console.error('❌ Cache prewarming failed:', err.message);
-  });
-}, 2000); // Wait 2 seconds after server starts
-
-console.log(`🔧 OHIF Proxy initialized with Orthanc URL: ${ORTHANC_URL}`);
-
 // Viewer wrapper page
 router.get('/viewer', logPerformance('VIEWER'), async (req, res) => {
   try {
     const studyUid = req.query.StudyInstanceUIDs;
+    const clinicId = req.query.clinicId || '';
+
     if (!studyUid) {
       return res.status(400).send('StudyInstanceUIDs parameter required');
     }
 
-    console.log(`📺 Loading viewer for StudyInstanceUID: ${studyUid}`);
+    console.log(`📺 Loading viewer for StudyInstanceUID: ${studyUid} (Clinic: ${clinicId})`);
 
     const html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
   <title>OHIF Viewer</title>
-  <link rel="preload" href="/api/proxy/ohif/app.bundle.b34f32c5020ee27ad26.js" as="script">
-  <link rel="preload" href="/api/proxy/ohif/app-config.js" as="script">
+  <link rel="preload" href="/api/proxy/ohif/app.bundle.b34f32c5020ee27ad26.js?clinicId=${clinicId}" as="script">
+  <link rel="preload" href="/api/proxy/ohif/app-config.js?clinicId=${clinicId}" as="script">
   <style>
     body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
     iframe { border: 0; width: 100%; height: 100%; }
@@ -308,7 +201,7 @@ router.get('/viewer', logPerformance('VIEWER'), async (req, res) => {
   </div>
   <iframe 
     id="ohif" 
-    src="/api/proxy/ohif/viewer?StudyInstanceUIDs=${studyUid}&token=${req.query.token}" 
+    src="/api/proxy/ohif/viewer?StudyInstanceUIDs=${studyUid}&token=${req.query.token}&clinicId=${clinicId}" 
     allow="fullscreen"
     style="display:none"
   ></iframe>
@@ -361,9 +254,11 @@ router.all('/dicom-web/*', logPerformance('DICOMWEB'), async (req, res) => {
     const path = req.params[0];
     const url = new URL(req.url, 'http://localhost');
     url.searchParams.delete('token');
+    const clinicId = url.searchParams.get('clinicId');
+    url.searchParams.delete('clinicId'); // Remove from forwarded query
     const cleanQuery = url.search;
 
-    const cacheKey = `dicom-${req.method}-${path}${cleanQuery}`;
+    const cacheKey = `dicom-${clinicId || 'default'}-${req.method}-${path}${cleanQuery}`;
 
     // Check cache for GET requests
     if (req.method === 'GET') {
@@ -392,14 +287,15 @@ router.all('/dicom-web/*', logPerformance('DICOMWEB'), async (req, res) => {
       }
     }
 
-    const orthancUrl = `${ORTHANC_URL}/dicom-web/${path}${cleanQuery}`;
+    const config = await getOrthancConfig(req);
+    const orthancUrl = `${config.url}/dicom-web/${path}${cleanQuery}`;
 
-    console.log(`🔍 [DICOMweb] ${req.method} ${path.split('/').slice(-2).join('/')}`);
+    console.log(`🔍 [DICOMweb] ${req.method} ${path.split('/').slice(-2).join('/')} (Clinic: ${clinicId || 'Default'})`);
 
     const options = {
       method: req.method,
-      headers: { 'Authorization': ORTHANC_AUTH },
-      agent: keepAliveAgent,
+      headers: { 'Authorization': config.auth },
+      agent: config.agent,
       timeout: 120000 // 2 minute timeout for large frames
     };
 
@@ -434,7 +330,6 @@ router.all('/dicom-web/*', logPerformance('DICOMWEB'), async (req, res) => {
           frameCache.set(cacheKey, { status: response.status, headers, body }, 3600);
           console.log(`💾 Cached frame (${(body.length / 1024).toFixed(2)}KB)`);
         } catch (cacheError) {
-          // If cache is full, just log and continue without caching
           console.warn(`⚠️  Frame cache full, skipping cache for this frame`);
         }
       } else if (path.includes('metadata')) {
@@ -479,16 +374,19 @@ router.all('/orthanc/*', logPerformance('ORTHANC'), async (req, res) => {
     const path = req.params[0];
     const url = new URL(req.url, 'http://localhost');
     url.searchParams.delete('token');
+    const clinicId = url.searchParams.get('clinicId');
+    url.searchParams.delete('clinicId');
     const cleanQuery = url.search;
 
-    const orthancUrl = `${ORTHANC_URL}/${path}${cleanQuery}`;
+    const config = await getOrthancConfig(req);
+    const orthancUrl = `${config.url}/${path}${cleanQuery}`;
 
-    console.log(`🔍 [Orthanc API] ${req.method} ${path.split('/').slice(0, 2).join('/')}`);
+    console.log(`🔍 [Orthanc API] ${req.method} ${path.split('/').slice(0, 2).join('/')} (Clinic: ${clinicId || 'Default'})`);
 
     const options = {
       method: req.method,
-      headers: { 'Authorization': ORTHANC_AUTH },
-      agent: keepAliveAgent
+      headers: { 'Authorization': config.auth },
+      agent: config.agent
     };
 
     if (req.headers['content-type']) {
@@ -525,6 +423,7 @@ router.get('/ohif/*', logPerformance('OHIF-STATIC'), async (req, res) => {
   const start = Date.now();
   try {
     const path = req.params[0];
+    const clinicId = req.query.clinicId || '';
 
     if (path.endsWith('.map')) {
       return res.status(404).end();
@@ -558,25 +457,18 @@ router.get('/ohif/*', logPerformance('OHIF-STATIC'), async (req, res) => {
       return res.send(cached.body);
     }
 
-    const url = `${ORTHANC_URL}/ohif/${path}`;
+    const config = await getOrthancConfig(req);
+    const url = `${config.url}/ohif/${path}`;
 
-    // Check config cache
-    if (path.includes('app-config.js')) {
-      const now = Date.now();
-      if (configCache && (now - configCacheTime) < CONFIG_CACHE_TTL) {
-        console.log(`💾 [OHIF] Serving cached config`);
-        res.setHeader('Content-Type', 'application/javascript');
-        res.setHeader('Cache-Control', 'public, max-age=300');
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        return res.send(configCache);
-      }
-    }
+    // Check config cache (skip for now as it might be clinic specific)
+    // Actually config might be same for all, but let's be safe and fetch fresh if clinicId changes?
+    // For now, let's just fetch.
 
     console.log(`📦 [OHIF] Fetching: ${path.split('/').pop()}`);
 
     const response = await fetchWithRetry(url, {
-      headers: { 'Authorization': ORTHANC_AUTH },
-      agent: keepAliveAgent
+      headers: { 'Authorization': config.auth },
+      agent: config.agent
     });
 
     const fetchTime = Date.now() - start;
@@ -596,6 +488,10 @@ router.get('/ohif/*', logPerformance('OHIF-STATIC'), async (req, res) => {
 
       console.log(`🔧 [OHIF] Rewriting URLs in ${path.split('/').pop()} (${fetchTime}ms)`);
 
+      // Append clinicId to proxy URLs so subsequent requests carry it
+      const clinicParam = clinicId ? `?clinicId=${clinicId}` : '';
+      const clinicParamAmp = clinicId ? `&clinicId=${clinicId}` : '';
+
       content = content
         .replace(/<base href="\/ohif\/?"/g, '<base href="/api/proxy/ohif/"')
         .replace(/https?:\/\/[^/'"]+\/ohif/g, '/api/proxy/ohif')
@@ -609,17 +505,29 @@ router.get('/ohif/*', logPerformance('OHIF-STATIC'), async (req, res) => {
         .replace(/url:\s*['"]\/studies['"]/g, "url: '/api/proxy/orthanc/studies'")
         .replace(/(['"])\/dicom-web\//g, "$1/api/proxy/dicom-web/");
 
+      // Inject clinicId into API calls in JS
+      // This is tricky. simpler to just rely on the fact that we inject it in the iframe src
+      // and OHIF might propagate query params? No, it doesn't usually.
+      // We might need to monkey-patch the config to add query params to the servers.
+
       if (path.includes('app-config.js')) {
-        configCache = content;
-        configCacheTime = Date.now();
+        // Modify the servers config to include clinicId in the wadoRoot etc
+        // This is a bit hacky but effective
+        content = content.replace(
+          /wadoRoot:\s*['"]\/api\/proxy\/dicom-web['"]/g,
+          `wadoRoot: '/api/proxy/dicom-web${clinicParam}'`
+        ).replace(
+          /qidoRoot:\s*['"]\/api\/proxy\/dicom-web['"]/g,
+          `qidoRoot: '/api/proxy/dicom-web${clinicParam}'`
+        ).replace(
+          /wadoUriRoot:\s*['"]\/api\/proxy\/dicom-web['"]/g,
+          `wadoUriRoot: '/api/proxy/dicom-web${clinicParam}'`
+        );
+      }
+
+      if (path.includes('app-config.js')) {
         res.setHeader('Cache-Control', 'public, max-age=300');
-        console.log(`💾 [OHIF] Config cached`);
       } else if (path === 'viewer') {
-        resourceCache.set(cacheKey, {
-          contentType,
-          cacheControl: 'public, max-age=300',
-          body: content
-        }, 300);
         res.setHeader('Cache-Control', 'public, max-age=300');
       } else {
         res.setHeader('Cache-Control', 'no-cache');
@@ -640,7 +548,6 @@ router.get('/ohif/*', logPerformance('OHIF-STATIC'), async (req, res) => {
           cacheControl,
           body
         }, 86400);
-        console.log(`💾 [OHIF] Cached ${path.split('/').pop()} (${(body.length / 1024).toFixed(2)}KB) in ${Date.now() - start}ms`);
         res.send(body);
       } else {
         response.body.pipe(res);

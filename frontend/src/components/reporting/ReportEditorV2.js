@@ -10,14 +10,51 @@ import Table from '@tiptap/extension-table';
 import TableRow from '@tiptap/extension-table-row';
 import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
-import { Extension } from '@tiptap/core';
+import { Extension, Mark } from '@tiptap/core';
+
+// Custom Font Size Mark
+const FontSize = Mark.create({
+  name: 'fontSize',
+  addAttributes() {
+    return {
+      size: {
+        default: null,
+        parseHTML: element => element.style.fontSize,
+        renderHTML: attributes => {
+          if (!attributes.size) {
+            return {}
+          }
+          return {
+            style: `font-size: ${attributes.size}`,
+          }
+        },
+      },
+    }
+  },
+  parseHTML() {
+    return [
+      {
+        tag: 'span',
+        getAttrs: element => {
+          const hasFontSize = element.style.fontSize
+          return hasFontSize ? {} : false
+        },
+      },
+    ]
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['span', HTMLAttributes, 0]
+  },
+});
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import EditorToolbar from './EditorToolbar';
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-export default function ReportEditorV2({ initialTechnique, initialFindings, initialConclusion, onChange, readOnly = false, onTemplateApply }) {
+import { toast } from 'sonner';
+
+export default function ReportEditorV2({ initialTechnique, initialFindings, initialConclusion, onChange, readOnly = false, onTemplateApply, templates = [] }) {
   const [grammarSuggestions, setGrammarSuggestions] = useState([]);
   const [isCheckingGrammar, setIsCheckingGrammar] = useState(false);
   const [currentSuggestion, setCurrentSuggestion] = useState(null);
@@ -46,10 +83,10 @@ export default function ReportEditorV2({ initialTechnique, initialFindings, init
             },
             apply(tr, set) {
               if (!currentSuggestion) return DecorationSet.empty;
-              
+
               const { from, ghostText, originalFrom, originalTo } = currentSuggestion;
               const decorations = [];
-              
+
               // Highlight the misspelled word with yellow background
               if (originalFrom !== undefined && originalTo !== undefined) {
                 const highlightDecoration = Decoration.inline(originalFrom, originalTo, {
@@ -57,7 +94,7 @@ export default function ReportEditorV2({ initialTechnique, initialFindings, init
                 });
                 decorations.push(highlightDecoration);
               }
-              
+
               // Add ghost text suggestion
               const ghostDecoration = Decoration.widget(from, () => {
                 const span = document.createElement('span');
@@ -70,7 +107,7 @@ export default function ReportEditorV2({ initialTechnique, initialFindings, init
                 return span;
               });
               decorations.push(ghostDecoration);
-              
+
               return DecorationSet.create(tr.doc, decorations);
             },
           },
@@ -81,6 +118,55 @@ export default function ReportEditorV2({ initialTechnique, initialFindings, init
           },
         }),
       ];
+    },
+  });
+
+  const templatesRef = useRef(templates);
+
+  useEffect(() => {
+    templatesRef.current = templates;
+  }, [templates]);
+
+  // Custom extension for trigger words
+  const TriggerExtension = Extension.create({
+    name: 'triggerHandler',
+
+    addKeyboardShortcuts() {
+      return {
+        'Enter': ({ editor }) => {
+          // Get text before cursor
+          const { selection } = editor.state;
+          const { $from } = selection;
+          const textBefore = $from.parent.textContent.substring(0, $from.parentOffset);
+
+          // Get the last word
+          const words = textBefore.split(/\s+/);
+          const lastWord = words[words.length - 1];
+
+          const currentTemplates = templatesRef.current;
+
+          if (lastWord && currentTemplates && currentTemplates.length > 0) {
+            const matchedTemplate = currentTemplates.find(t => t.triggerWord && t.triggerWord.toLowerCase() === lastWord.toLowerCase());
+
+            if (matchedTemplate) {
+              // Delete the trigger word
+              editor.commands.deleteRange({
+                from: $from.pos - lastWord.length,
+                to: $from.pos
+              });
+
+              // Apply the template
+              if (onTemplateApply) {
+                onTemplateApply(matchedTemplate);
+                toast.success(`Modèle "${matchedTemplate.name}" appliqué`);
+                return true; // Prevent default Enter behavior
+              }
+            }
+          }
+
+          return false; // Let default Enter behavior proceed
+        },
+      }
     },
   });
 
@@ -98,6 +184,8 @@ export default function ReportEditorV2({ initialTechnique, initialFindings, init
     TableHeader,
     TableCell,
     GhostTextExtension,
+    FontSize,
+    TriggerExtension,
   ];
 
   const techniqueEditor = useEditor({
@@ -208,12 +296,12 @@ export default function ReportEditorV2({ initialTechnique, initialFindings, init
         replacements: match.replacements.slice(0, 3).map(r => r.value),
         rule: match.rule.category.name,
       }));
-      
+
       setGrammarSuggestions(suggestions);
 
       // Show inline suggestion for error at or near cursor
       if (suggestions.length > 0 && cursorPos !== null && cursorPos !== undefined) {
-        const nearestError = suggestions.find(s => 
+        const nearestError = suggestions.find(s =>
           Math.abs(s.offset + s.length - cursorPos) <= 5 &&
           s.replacements.length > 0
         );
@@ -222,7 +310,7 @@ export default function ReportEditorV2({ initialTechnique, initialFindings, init
           // Calculate ghost text (only the part to add after the error)
           const errorText = nearestError.errorText;
           const replacement = nearestError.replacements[0];
-          
+
           // If the replacement starts with the error text, show only the additional part
           let ghostText;
           if (replacement.toLowerCase().startsWith(errorText.toLowerCase())) {
@@ -282,10 +370,10 @@ export default function ReportEditorV2({ initialTechnique, initialFindings, init
       if (template.conclusion) {
         conclusionEditor.commands.setContent(template.conclusion);
       }
-      
+
       // Trigger onChange to update parent state
       handleContentChange();
-      
+
       // Call parent's onTemplateApply if provided
       if (onTemplateApply) {
         await onTemplateApply(template);
@@ -309,13 +397,12 @@ export default function ReportEditorV2({ initialTechnique, initialFindings, init
           </p>
         </div>
       )}
-      
+
       <div className="flex-1 overflow-y-auto p-8 relative">
         <div className="max-w-[21cm] mx-auto space-y-6">
           {/* Technique Section - Floating Box */}
-          <div className={`bg-white shadow-lg rounded-lg overflow-hidden transition-all duration-200 ${
-            focusedEditor === 'technique' ? 'ring-2 ring-blue-500 border-l-4 border-blue-500' : 'border border-gray-200 border-l-4 border-blue-300'
-          }`}>
+          <div className={`bg-white shadow-lg rounded-lg overflow-hidden transition-all duration-200 ${focusedEditor === 'technique' ? 'ring-2 ring-blue-500 border-l-4 border-blue-500' : 'border border-gray-200 border-l-4 border-blue-300'
+            }`}>
             <button
               onClick={() => toggleSection('technique')}
               className="w-full px-6 py-3 flex items-center justify-between hover:bg-blue-50 transition-colors"
@@ -336,9 +423,8 @@ export default function ReportEditorV2({ initialTechnique, initialFindings, init
           </div>
 
           {/* Findings Section - Main Content */}
-          <div className={`bg-white shadow-lg rounded-lg overflow-hidden transition-all duration-200 ${
-            focusedEditor === 'findings' ? 'ring-2 ring-gray-400 border-l-4 border-gray-500' : 'border border-gray-200'
-          }`}>
+          <div className={`bg-white shadow-lg rounded-lg overflow-hidden transition-all duration-200 ${focusedEditor === 'findings' ? 'ring-2 ring-gray-400 border-l-4 border-gray-500' : 'border border-gray-200'
+            }`}>
             <button
               onClick={() => toggleSection('findings')}
               className="w-full px-6 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
@@ -359,9 +445,8 @@ export default function ReportEditorV2({ initialTechnique, initialFindings, init
           </div>
 
           {/* Conclusion Section - Floating Box */}
-          <div className={`bg-white shadow-lg rounded-lg overflow-hidden transition-all duration-200 ${
-            focusedEditor === 'conclusion' ? 'ring-2 ring-green-500 border-l-4 border-green-500' : 'border border-gray-200 border-l-4 border-green-300'
-          }`}>
+          <div className={`bg-white shadow-lg rounded-lg overflow-hidden transition-all duration-200 ${focusedEditor === 'conclusion' ? 'ring-2 ring-green-500 border-l-4 border-green-500' : 'border border-gray-200 border-l-4 border-green-300'
+            }`}>
             <button
               onClick={() => toggleSection('conclusion')}
               className="w-full px-6 py-3 flex items-center justify-between hover:bg-green-50 transition-colors"

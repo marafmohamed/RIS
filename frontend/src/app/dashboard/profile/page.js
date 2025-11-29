@@ -29,6 +29,9 @@ export default function ProfilePage() {
         technique: '',
         findings: '',
         conclusion: '',
+        findings: '',
+        conclusion: '',
+        triggerWord: '',
         isDefault: false
     });
 
@@ -71,6 +74,9 @@ export default function ProfilePage() {
             technique: '',
             findings: '',
             conclusion: '',
+            findings: '',
+            conclusion: '',
+            triggerWord: '',
             isDefault: false
         });
         setShowTemplateModal(true);
@@ -86,6 +92,9 @@ export default function ProfilePage() {
             technique: template.technique || '',
             findings: template.findings || '',
             conclusion: template.conclusion || '',
+            findings: template.findings || '',
+            conclusion: template.conclusion || '',
+            triggerWord: template.triggerWord || '',
             isDefault: template.isDefault || false
         });
         setShowTemplateModal(true);
@@ -101,6 +110,9 @@ export default function ProfilePage() {
             technique: template.technique || '',
             findings: template.findings || '',
             conclusion: template.conclusion || '',
+            findings: template.findings || '',
+            conclusion: template.conclusion || '',
+            triggerWord: '',
             isDefault: false
         });
         setShowTemplateModal(true);
@@ -234,8 +246,8 @@ export default function ProfilePage() {
                                 <p className="text-blue-100 text-sm mt-1">{user?.email}</p>
                                 <div className="mt-4">
                                     <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${user?.role === 'ADMIN' ? 'bg-red-500 text-white' :
-                                            user?.role === 'VIEWER' ? 'bg-gray-500 text-white' :
-                                                'bg-blue-500 text-white border border-blue-400'
+                                        user?.role === 'VIEWER' ? 'bg-gray-500 text-white' :
+                                            'bg-blue-500 text-white border border-blue-400'
                                         }`}>
                                         {user?.role}
                                     </span>
@@ -446,6 +458,18 @@ export default function ProfilePage() {
                                                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                                                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
                                                 placeholder="Brève description de ce modèle"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Mot déclencheur (Raccourci)
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={formData.triggerWord}
+                                                onChange={(e) => setFormData({ ...formData, triggerWord: e.target.value })}
+                                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
+                                                placeholder="ex: abdo (Tapez 'abdo' puis Entrée pour insérer)"
                                             />
                                         </div>
                                     </div>

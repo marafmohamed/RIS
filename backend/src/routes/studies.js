@@ -1,21 +1,42 @@
 const express = require('express');
 const { authMiddleware } = require('../middleware/auth');
-const orthancService = require('../services/orthancService');
+const OrthancService = require('../services/orthancService');
 const Report = require('../models/Report');
+const Clinic = require('../models/Clinic');
 
 const router = express.Router();
 
 // All routes require authentication
 router.use(authMiddleware);
 
+// Helper to get Orthanc service instance
+async function getOrthancService(clinicId) {
+  if (clinicId) {
+    const clinic = await Clinic.findById(clinicId);
+    if (clinic) {
+      return OrthancService.fromClinic(clinic);
+    }
+  }
+
+  // Try to find default clinic
+  const defaultClinic = await Clinic.findOne({ isDefault: true });
+  if (defaultClinic) {
+    return OrthancService.fromClinic(defaultClinic);
+  }
+
+  // Fallback to env vars
+  return new OrthancService();
+}
+
 // Get all studies with report status
 router.get('/', async (req, res) => {
   try {
-    const { patientName, patientId, startDate, endDate } = req.query;
+    const { patientName, patientId, startDate, endDate, clinicId, modality } = req.query;
 
+    const orthancService = await getOrthancService(clinicId);
     let orthancStudies = [];
 
-    // Search based on query parameters
+    // 1. Search Orthanc based on query parameters
     if (patientName) {
       orthancStudies = await orthancService.searchStudiesByPatientName(patientName);
     } else if (patientId) {
@@ -30,65 +51,78 @@ router.get('/', async (req, res) => {
       orthancStudies = await orthancService.searchStudiesByDate(startDateStr, null);
     }
 
-    // Parse Orthanc studies
-    const studies = orthancStudies.map(study => orthancService.parseStudy(study));
+    // 2. Parse Studies using the Service
+    // The service handles ModalitiesInStudy array and Age calculation internally now
+    let studies = orthancStudies.map(rawStudy => orthancService.parseStudy(rawStudy));
 
-    // Get all reports for these studies
+    // 3. Filter by Modality (Backend Side)
+    // Orthanc doesn't support filtering by modality in the search API easily, so we filter the results here
+    if (modality) {
+      studies = studies.filter(s =>
+        s.modality && s.modality.includes(modality)
+      );
+    }
+
+    // 4. Get all reports for these studies to merge status
     const studyUids = studies.map(s => s.studyInstanceUid);
-    
+
     // Build report filter
     const reportFilter = { studyInstanceUid: { $in: studyUids } };
-    
-    // For non-admin users, also get their own reports to show in worklist
-    // This way they can see which patients they're working on
+
     if (req.user.role !== 'ADMIN') {
       reportFilter.authorId = req.user._id;
     }
-    
-    const reports = await Report.find(reportFilter)
-      .select('studyInstanceUid status authorName authorId updatedAt');
 
-    // Create a map of studyUid -> report
+    const reports = await Report.find(reportFilter)
+      .select('studyInstanceUid status authorName authorId updatedAt assignedTo assignedBy assignedAt')
+      .populate('assignedTo', 'fullName')
+      .populate('assignedBy', 'fullName');
+
+    // Create a map of studyUid -> report for O(1) lookup
     const reportMap = {};
     reports.forEach(report => {
       reportMap[report.studyInstanceUid] = {
         status: report.status,
         authorName: report.authorName,
-        updatedAt: report.updatedAt
+        updatedAt: report.updatedAt,
+        authorId: report.authorId,
+        assignedTo: report.assignedTo,
+        assignedBy: report.assignedBy,
+        assignedAt: report.assignedAt
       };
     });
-
-    // Merge study data with report status
-    const studiesWithStatus = studies.map(study => {
+    // 5. Merge study data with report status
+    let studiesWithStatus = studies.map(study => {
       const report = reportMap[study.studyInstanceUid];
       return {
         ...study,
         reportStatus: report?.status || 'UNREPORTED',
         reportAuthor: report?.authorName || null,
         reportUpdatedAt: report?.updatedAt || null,
-        reportAuthorId: report?.authorId || null
+        reportAuthorId: report?.authorId || null,
+        assignedTo: report?.assignedTo || null,
+        assignedBy: report?.assignedBy || null,
+        assignedAt: report?.assignedAt || null
       };
     });
-    
-    // For non-admin users, filter to show:
-    // 1. Studies with no reports (UNREPORTED)
-    // 2. Studies with reports by the current user
-    let filteredStudies = studiesWithStatus;
+
+    // 6. Role based final filtering
     if (req.user.role !== 'ADMIN') {
-      filteredStudies = studiesWithStatus.filter(study => 
-        study.reportStatus === 'UNREPORTED' || 
-        study.reportAuthorId?.toString() === req.user._id.toString()
+      studiesWithStatus = studiesWithStatus.filter(study =>
+        study.reportStatus === 'UNREPORTED' ||
+        study.reportAuthorId?.toString() === req.user._id.toString() ||
+        study.assignedTo?._id?.toString() === req.user._id.toString()
       );
     }
 
-    // Sort by study date (newest first)
-    filteredStudies.sort((a, b) => {
+    // 7. Sort by study date (newest first)
+    studiesWithStatus.sort((a, b) => {
       if (!a.studyDate) return 1;
       if (!b.studyDate) return -1;
       return new Date(b.studyDate) - new Date(a.studyDate);
     });
 
-    res.json(filteredStudies);
+    res.json(studiesWithStatus);
   } catch (error) {
     console.error('Get studies error:', error);
     res.status(500).json({ error: 'Failed to fetch studies from PACS' });
@@ -99,6 +133,9 @@ router.get('/', async (req, res) => {
 router.get('/:studyUid', async (req, res) => {
   try {
     const { studyUid } = req.params;
+    const { clinicId } = req.query;
+
+    const orthancService = await getOrthancService(clinicId);
 
     // Find the study in Orthanc by StudyInstanceUID
     const searchResults = await orthancService.findStudies({
@@ -110,6 +147,8 @@ router.get('/:studyUid', async (req, res) => {
     }
 
     const orthancStudy = searchResults[0];
+
+    // Use the Service parser here too
     const study = orthancService.parseStudy(orthancStudy);
 
     // Get report if exists
@@ -128,6 +167,9 @@ router.get('/:studyUid', async (req, res) => {
 // Test Orthanc connection
 router.get('/test/connection', async (req, res) => {
   try {
+    const { clinicId } = req.query;
+    const orthancService = await getOrthancService(clinicId);
+
     const systemInfo = await orthancService.getSystemInfo();
     res.json({
       connected: true,

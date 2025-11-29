@@ -37,7 +37,7 @@ const reportSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['DRAFT', 'FINAL'],
+    enum: ['DRAFT', 'FINAL', 'ASSIGNED'],
     default: 'DRAFT'
   },
   authorId: {
@@ -48,6 +48,18 @@ const reportSchema = new mongoose.Schema({
   authorName: {
     type: String,
     required: true
+  },
+  // Assignment tracking
+  assignedTo: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  assignedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  assignedAt: {
+    type: Date
   },
   finalizedAt: {
     type: Date

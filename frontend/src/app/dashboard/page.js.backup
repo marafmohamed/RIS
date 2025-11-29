@@ -1,0 +1,431 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import Navbar from '@/components/Navbar';
+import { studiesAPI, clinicsAPI } from '@/lib/api';
+import { toast } from 'sonner';
+import { FiSearch, FiFileText, FiCalendar, FiFilter, FiHome } from 'react-icons/fi';
+import { format } from 'date-fns';
+import { useAuth } from '@/lib/AuthContext';
+
+export default function DashboardPage() {
+  const { user } = useAuth();
+  const [studies, setStudies] = useState([]);
+  const [clinics, setClinics] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState({
+    patientName: '',
+    patientId: '',
+    startDate: '',
+    endDate: '',
+    clinicId: ''
+  });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(10);
+
+  useEffect(() => {
+    fetchClinics();
+  }, []);
+
+  useEffect(() => {
+    if (clinics.length > 0) {
+      // If user has a default clinic or just select the first one if not set
+      // For now, let's default to the first one if no filter set, or 'all' if we want to support aggregation (but backend might not support aggregation across orthancs easily yet)
+      // Actually, the backend proxy needs a specific clinic to know which Orthanc to query.
+      // So we MUST select one.
+      if (!filters.clinicId) {
+        const defaultClinic = clinics.find(c => c.isDefault) || clinics[0];
+        if (defaultClinic) {
+          setFilters(prev => ({ ...prev, clinicId: defaultClinic._id }));
+        }
+      }
+    }
+  }, [clinics]);
+
+  useEffect(() => {
+    if (filters.clinicId) {
+      fetchStudies();
+    }
+  }, [filters.clinicId]);
+
+  const fetchClinics = async () => {
+    try {
+      const response = await clinicsAPI.getAll();
+      setClinics(response.data);
+    } catch (error) {
+      console.error('Failed to fetch clinics:', error);
+      toast.error('Erreur lors du chargement des cliniques');
+    }
+  };
+
+  const fetchStudies = async (searchFilters = {}) => {
+    if (!filters.clinicId && !searchFilters.clinicId) return;
+
+    setLoading(true);
+    try {
+      const activeFilters = { ...filters, ...searchFilters };
+      const response = await studiesAPI.getAll(activeFilters);
+      setStudies(response.data);
+    } catch (error) {
+      console.error('Failed to fetch studies:', error);
+      toast.error('Échec du chargement des études');
+      setStudies([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSearch = (e) => {
+    e.preventDefault();
+    fetchStudies();
+  };
+
+  const getStatusBadge = (status) => {
+    const badges = {
+      UNREPORTED: 'bg-gray-100 text-gray-800',
+      DRAFT: 'bg-yellow-100 text-yellow-800',
+      FINAL: 'bg-green-100 text-green-800'
+    };
+    return badges[status] || badges.UNREPORTED;
+  };
+
+  const getActionLabel = (study) => {
+    if (study.reportStatus === 'UNREPORTED') {
+      if (user?.role === 'RADIOLOGIST' || user?.role === 'ADMIN') {
+        return 'Créer un Rapport';
+      }
+      return 'En attente';
+    }
+    return 'Voir le Rapport';
+  };
+
+  const isActionEnabled = (study) => {
+    if (study.reportStatus === 'UNREPORTED') {
+      return user?.role === 'RADIOLOGIST' || user?.role === 'ADMIN';
+    }
+    return true;
+  };
+
+  // Pagination calculations
+  const indexOfLastStudy = currentPage * itemsPerPage;
+  const indexOfFirstStudy = indexOfLastStudy - itemsPerPage;
+  const currentStudies = studies.slice(indexOfFirstStudy, indexOfLastStudy);
+  const totalPages = Math.ceil(studies.length / itemsPerPage);
+
+  const handlePageChange = (pageNumber) => {
+    setCurrentPage(pageNumber);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [studies.length]);
+
+  return (
+    <>
+      <Navbar />
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">Liste de Travail</h1>
+          <p className="mt-2 text-gray-600">Consulter et rapporter les études des patients depuis le PACS</p>
+        </div>
+
+        {/* Search Filters */}
+        <div className="card mb-6">
+          <form onSubmit={handleSearch}>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <FiHome className="inline mr-1" />
+                  Clinique
+                </label>
+                <select
+                  value={filters.clinicId}
+                  onChange={(e) => setFilters({ ...filters, clinicId: e.target.value })}
+                  className="input"
+                >
+                  {clinics.map(clinic => (
+                    <option key={clinic._id} value={clinic._id}>
+                      {clinic.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <FiSearch className="inline mr-1" />
+                  Nom du Patient
+                </label>
+                <input
+                  type="text"
+                  value={filters.patientName}
+                  onChange={(e) => setFilters({ ...filters, patientName: e.target.value })}
+                  placeholder="Rechercher par nom..."
+                  className="input"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  ID Patient
+                </label>
+                <input
+                  type="text"
+                  value={filters.patientId}
+                  onChange={(e) => setFilters({ ...filters, patientId: e.target.value })}
+                  placeholder="Rechercher par ID..."
+                  className="input"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <FiCalendar className="inline mr-1" />
+                  Date de Début
+                </label>
+                <input
+                  type="date"
+                  value={filters.startDate}
+                  onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
+                  className="input"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Date de Fin
+                </label>
+                <input
+                  type="date"
+                  value={filters.endDate}
+                  onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
+                  className="input"
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 flex space-x-3">
+              <button type="submit" className="btn btn-primary">
+                <FiFilter className="inline mr-2" />
+                Appliquer les Filtres
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const defaultClinic = clinics.find(c => c.isDefault) || clinics[0];
+                  setFilters({
+                    patientName: '',
+                    patientId: '',
+                    startDate: '',
+                    endDate: '',
+                    clinicId: defaultClinic ? defaultClinic._id : ''
+                  });
+                }}
+                className="btn btn-secondary"
+              >
+                Effacer
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {/* Studies Table */}
+        <div className="card overflow-hidden">
+          {loading ? (
+            <div className="text-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+              <p className="mt-4 text-gray-600">Chargement des études...</p>
+            </div>
+          ) : !filters.clinicId ? (
+            <div className="text-center py-12">
+              <div className="text-gray-400 mb-4">
+                <svg className="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
+              </div>
+              <p className="text-gray-500 text-lg font-medium">Aucune clinique sélectionnée</p>
+              <p className="text-gray-400 text-sm mt-2">Veuillez sélectionner une clinique pour afficher les études</p>
+            </div>
+          ) : studies.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="text-gray-400 mb-4">
+                <svg className="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <p className="text-gray-500 text-lg font-medium">Aucune étude trouvée</p>
+              <p className="text-gray-400 text-sm mt-2">
+                {filters.patientName || filters.patientId || filters.startDate || filters.endDate
+                  ? 'Essayez de modifier vos critères de recherche'
+                  : 'Aucune étude disponible pour cette clinique'}
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Nom du Patient
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      ID Patient
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Date de l&apos;Étude
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Modalité
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Description
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Statut
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {currentStudies.map((study) => (
+                    <tr key={study.studyInstanceUid} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-medium text-gray-900">
+                          {study.patientName}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-500">{study.patientId}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-500">
+                          {study.studyDate ? format(new Date(study.studyDate), 'MMM dd, yyyy') : 'N/A'}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                          {study.modality || 'N/A'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-gray-500 max-w-xs truncate">
+                          {study.studyDescription || 'Aucune description'}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadge(study.reportStatus)}`}>
+                          {study.reportStatus === 'UNREPORTED' ? 'Non rapporté' :
+                            study.reportStatus === 'DRAFT' ? 'Brouillon' : 'Finalisé'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        {isActionEnabled(study) ? (
+                          <Link
+                            href={`/reporting/${study.studyInstanceUid}?clinicId=${filters.clinicId}`}
+                            className="text-blue-600 hover:text-blue-900"
+                          >
+                            <FiFileText className="inline mr-1" />
+                            {getActionLabel(study)}
+                          </Link>
+                        ) : (
+                          <span className="text-gray-400 cursor-not-allowed">
+                            <FiFileText className="inline mr-1" />
+                            {getActionLabel(study)}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Pagination */}
+        {!loading && studies.length > 0 && totalPages > 1 && (
+          <div className="card mt-4">
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-gray-700">
+                Affichage de {indexOfFirstStudy + 1} à {Math.min(indexOfLastStudy, studies.length)} sur {studies.length} études
+              </div>
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  className="px-3 py-1 rounded-md border border-gray-300 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Précédent
+                </button>
+                {Array.from({ length: Math.min(totalPages, 10) }, (_, i) => {
+                  const page = i + 1;
+                  if (
+                    page <= 3 ||
+                    page > totalPages - 3 ||
+                    (page >= currentPage - 1 && page <= currentPage + 1)
+                  ) {
+                    return (
+                      <button
+                        key={page}
+                        onClick={() => handlePageChange(page)}
+                        className={`px-3 py-1 rounded-md text-sm font-medium ${currentPage === page
+                          ? 'bg-blue-600 text-white'
+                          : 'border border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
+                          }`}
+                      >
+                        {page}
+                      </button>
+                    );
+                  } else if (page === 4 || page === totalPages - 3) {
+                    return <span key={page} className="px-2 text-gray-500">...</span>;
+                  }
+                  return null;
+                })}
+                {totalPages > 10 && Array.from({ length: totalPages - 10 }, (_, i) => {
+                  const page = i + 11;
+                  if (
+                    page <= 3 ||
+                    page > totalPages - 3 ||
+                    (page >= currentPage - 1 && page <= currentPage + 1)
+                  ) {
+                    return (
+                      <button
+                        key={page}
+                        onClick={() => handlePageChange(page)}
+                        className={`px-3 py-1 rounded-md text-sm font-medium ${currentPage === page
+                          ? 'bg-blue-600 text-white'
+                          : 'border border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
+                          }`}
+                      >
+                        {page}
+                      </button>
+                    );
+                  } else if (page === 4 || page === totalPages - 3) {
+                    return <span key={page} className="px-2 text-gray-500">...</span>;
+                  }
+                  return null;
+                })}
+                <button
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-1 rounded-md border border-gray-300 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Suivant
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-4 text-sm text-gray-600">
+          Total des études : {studies.length}
+        </div>
+      </div>
+    </>
+  );
+}

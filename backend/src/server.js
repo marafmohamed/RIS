@@ -11,6 +11,7 @@ const proxyRoutes = require('./routes/proxy');
 const dicomImagesRoutes = require('./routes/dicomImages');
 const settingsRoutes = require('./routes/settings');
 const templateRoutes = require('./routes/templates');
+const clinicRoutes = require('./routes/clinics');
 
 const app = express();
 
@@ -37,24 +38,25 @@ mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-.then(() => {
-  console.log('✅ Connected to MongoDB');
-  seedDefaultAdmin();
-  const PORT = process.env.PORT || 5000;
+  .then(async () => {
+    console.log('✅ Connected to MongoDB');
+    await seedDefaultAdmin();
+    await require('./utils/initializeDefaultClinic')();
+    const PORT = process.env.PORT || 5000;
 
-// Only listen if we are running locally (not on Vercel)
-if (process.env.NODE_ENV !== 'production') {
-  app.listen(PORT, () => {
-    console.log(`🚀 RIS Backend server running on port ${PORT}`);
-    console.log(`📍 Environment: ${process.env.NODE_ENV}`);
-    console.log(`🔗 Frontend URL: ${process.env.FRONTEND_URL}`);
+    // Only listen if we are running locally (not on Vercel)
+    if (process.env.NODE_ENV !== 'production') {
+      app.listen(PORT, () => {
+        console.log(`🚀 RIS Backend server running on port ${PORT}`);
+        console.log(`📍 Environment: ${process.env.NODE_ENV}`);
+        console.log(`🔗 Frontend URL: ${process.env.FRONTEND_URL}`);
+      });
+    }
+  })
+  .catch((err) => {
+    console.error('❌ MongoDB connection error:', err);
+    process.exit(1);
   });
-}
-})
-.catch((err) => {
-  console.error('❌ MongoDB connection error:', err);
-  process.exit(1);
-});
 
 // Seed default admin user
 async function seedDefaultAdmin() {
@@ -86,11 +88,12 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/proxy', proxyRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/templates', templateRoutes);
+app.use('/api/clinics', clinicRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
+  res.json({
+    status: 'ok',
     message: 'RIS Backend is running',
     timestamp: new Date().toISOString(),
     cors: {

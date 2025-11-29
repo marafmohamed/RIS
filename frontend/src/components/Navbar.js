@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { FiHome, FiUsers, FiFileText, FiLogOut, FiMenu, FiSettings, FiUser } from 'react-icons/fi';
+import { Building } from 'lucide-react';
 import { useState } from 'react';
 
 export default function Navbar() {
@@ -28,8 +29,8 @@ export default function Navbar() {
   }
 
   if (user?.role === 'ADMIN') {
+    navItems.push({ href: '/dashboard/clinics', label: 'Cliniques', icon: Building });
     navItems.push({ href: '/dashboard/users', label: 'Utilisateurs', icon: FiUsers });
-    navItems.push({ href: '/dashboard/settings', label: 'Paramètres', icon: FiSettings });
   }
 
   return (

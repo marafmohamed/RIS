@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { Monitor, Save, X, FileText, Download, LayoutGrid, ChevronDown, Search } from 'lucide-react';
 import ReportEditorV2 from '@/components/reporting/ReportEditorV2';
@@ -13,6 +13,8 @@ import { exportToPDF } from '@/utils/pdfExport';
 
 export default function ReportingPage({ params }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const clinicId = searchParams.get('clinicId');
   const { studyUid } = params;
 
   const [study, setStudy] = useState(null);
@@ -185,7 +187,10 @@ export default function ReportingPage({ params }) {
 
     // Use the proxy's viewer endpoint which handles authentication server-side
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
-    const viewerUrl = `${apiUrl}/proxy/viewer?StudyInstanceUIDs=${studyUid}&token=${token}`;
+    let viewerUrl = `${apiUrl}/proxy/viewer?StudyInstanceUIDs=${studyUid}&token=${token}`;
+    if (clinicId) {
+      viewerUrl += `&clinicId=${clinicId}`;
+    }
 
     const newWindow = window.open(
       viewerUrl,
@@ -580,7 +585,7 @@ export default function ReportingPage({ params }) {
           <PanelGroup direction="horizontal">
             {/* Left Panel - OHIF Viewer */}
             <Panel defaultSize={50} minSize={30}>
-              <OHIFViewer studyUid={studyUid} />
+              <OHIFViewer studyUid={studyUid} clinicId={clinicId} />
             </Panel>
 
             {/* Resize Handle */}
@@ -595,6 +600,7 @@ export default function ReportingPage({ params }) {
                 onChange={setReportData}
                 readOnly={currentUser?.role === 'VIEWER' || currentUser?.role === 'REFERRING_PHYSICIAN'}
                 onTemplateApply={handleApplyTemplate}
+                templates={templates}
               />
             </Panel>
           </PanelGroup>

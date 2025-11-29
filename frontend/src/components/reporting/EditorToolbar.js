@@ -1,7 +1,7 @@
 'use client';
 
-import { 
-  Bold, Italic, Underline, List, ListOrdered, 
+import {
+  Bold, Italic, Underline, List, ListOrdered,
   Heading1, Heading2, Table, Plus, Minus,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
   FileText
@@ -79,7 +79,7 @@ export default function EditorToolbar({ editor, onTemplateApply, hideTemplates =
     try {
       const user = JSON.parse(localStorage.getItem('user') || '{}');
       setCurrentUser(user);
-      
+
       if (user.role !== 'VIEWER') {
         const response = await templatesAPI.getAll();
         // Backend now returns user's own templates + default templates
@@ -151,9 +151,8 @@ export default function EditorToolbar({ editor, onTemplateApply, hideTemplates =
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className={`p-2 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors ${
-        active ? 'bg-blue-100 text-blue-700' : 'text-gray-700'
-      }`}
+      className={`p-2 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors ${active ? 'bg-blue-100 text-blue-700' : 'text-gray-700'
+        }`}
     >
       {children}
     </button>
@@ -174,9 +173,9 @@ export default function EditorToolbar({ editor, onTemplateApply, hideTemplates =
             <span>Modèles</span>
             <span className="text-xs bg-blue-200 px-1.5 py-0.5 rounded-full">{templates.length}</span>
           </button>
-          
+
           {showTemplateDropdown && (
-            <div 
+            <div
               className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-300 rounded-lg shadow-xl max-h-96 overflow-hidden z-50"
               onMouseDown={(e) => e.preventDefault()}
             >
@@ -190,7 +189,7 @@ export default function EditorToolbar({ editor, onTemplateApply, hideTemplates =
                   className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
-              
+
               {/* Templates List */}
               <div className="overflow-y-auto max-h-80">
                 {filteredTemplates.length === 0 ? (
@@ -343,6 +342,41 @@ export default function EditorToolbar({ editor, onTemplateApply, hideTemplates =
       >
         <AlignJustify size={18} />
       </ToolbarButton>
+
+      <ToolbarDivider />
+
+      {/* Font Size */}
+      <div className="relative group">
+        <select
+          onChange={(e) => {
+            if (e.target.value) {
+              editor.chain().focus().setMark('fontSize', { size: e.target.value }).run();
+              e.target.value = ''; // Reset to allow re-selecting same value if needed
+            }
+          }}
+          className="px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-20"
+          defaultValue=""
+          title="Taille de la police"
+        >
+          <option value="" disabled>Taille</option>
+          <option value="12px">12px</option>
+          <option value="14px">14px</option>
+          <option value="16px">16px</option>
+          <option value="18px">18px</option>
+          <option value="20px">20px</option>
+          <option value="22px">22px</option>
+          <option value="24px">24px</option>
+          <option value="28px">28px</option>
+          <option value="32px">32px</option>
+        </select>
+        <button
+          onClick={() => editor.chain().focus().unsetMark('fontSize').run()}
+          className="ml-1 p-1 text-gray-500 hover:text-red-500"
+          title="Réinitialiser la taille"
+        >
+          <Minus size={14} />
+        </button>
+      </div>
 
       <ToolbarDivider />
 

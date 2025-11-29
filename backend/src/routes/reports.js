@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { authMiddleware, adminOnly } = require('../middleware/auth');
 const Report = require('../models/Report');
+const User = require('../models/User');
 
 const router = express.Router();
 
@@ -344,6 +345,129 @@ router.get('/validated/me', async (req, res) => {
   } catch (error) {
     console.error('Get validated reports error:', error);
     res.status(500).json({ error: 'Failed to fetch validated reports' });
+  }
+});
+
+// Assign study to radiologist (Admin only)
+router.post('/assign', adminOnly, async (req, res) => {
+  try {
+    // 1. Destructure ALL required fields from the body
+    const { 
+      studyInstanceUid, 
+      radiologistId, 
+      patientName, 
+      patientId, 
+      studyDate,
+      modality,
+      studyDescription
+    } = req.body;
+
+    console.log('Assign Request Body:', req.body);
+
+    if (!studyInstanceUid || !radiologistId) {
+      return res.status(400).json({ error: 'Study UID and radiologist ID are required' });
+    }
+
+    // Check if report exists
+    let report = await Report.findOne({ studyInstanceUid });
+
+    if (!report) {
+      // 2. Validate required fields for NEW report creation
+      if (!patientName || !patientId || !studyDate) {
+         return res.status(400).json({ 
+           error: 'Missing patient details (name, id, date) required to create a new report assignment.' 
+         });
+      }
+
+      const radiologist = await User.findById(radiologistId);
+      if (!radiologist) {
+        return res.status(404).json({ error: 'Radiologist not found' });
+      }
+
+      // 3. Create report with all details
+      report = new Report({
+        studyInstanceUid,
+        status: 'ASSIGNED',
+        assignedTo: radiologistId,
+        assignedBy: req.user._id,
+        assignedAt: new Date(),
+        authorId: radiologistId,
+        authorName: radiologist.fullName,
+        // Map the fields from request body to Schema
+        patientName,
+        patientId,
+        studyDate,
+        modality: modality || '',
+        studyDescription: studyDescription || ''
+      });
+    } else {
+      // Update existing report assignment
+      report.assignedTo = radiologistId;
+      report.assignedBy = req.user._id;
+      report.assignedAt = new Date();
+      report.status = report.status === 'DRAFT' ? 'DRAFT' : 'ASSIGNED'; // Keep draft if already started
+    }
+
+    await report.save();
+
+    res.json({
+      message: 'Study assigned successfully',
+      report
+    });
+  } catch (error) {
+    console.error('Assign study error:', error);
+    // Send the specific validation error message back if available
+    res.status(500).json({ error: error.message || 'Failed to assign study' });
+  }
+});
+
+// Download report as PDF
+router.get('/download/:id/pdf', async (req, res) => {
+  try {
+    const report = await Report.findById(req.params.id);
+
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    // Only allow download of finalized reports
+    if (report.status !== 'FINAL') {
+      return res.status(403).json({ error: 'Only finalized reports can be downloaded' });
+    }
+
+    // Return report data - frontend will handle PDF generation
+    res.json({
+      report,
+      format: 'pdf'
+    });
+  } catch (error) {
+    console.error('Download PDF error:', error);
+    res.status(500).json({ error: 'Failed to download report' });
+  }
+});
+
+// Download report as Word
+router.get('/download/:id/word', async (req, res) => {
+  try {
+    const report = await Report.findById(req.params.id);
+
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    // Only allow download of finalized reports
+    if (report.status !== 'FINAL') {
+      return res.status(403).json({ error: 'Only finalized reports can be downloaded' });
+    }
+
+    // Return report data - frontend will handle Word generation
+    res.json({
+      report,
+      format: 'word'
+    });
+  } catch (error) {
+    console.error('Download Word error:', error);
+    res.status(500).json({ error: 'Failed to download report' });
   }
 });
 
