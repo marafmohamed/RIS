@@ -597,7 +597,7 @@ export default function DashboardPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowAssignModal(false)}>
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
             <div className="p-6 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">Assigner l'étude</h3>
+              <h3 className="text-lg font-semibold text-gray-900">Assigner l&apos;étude</h3>
               <p className="text-sm text-gray-500 mt-1">Patient: {selectedStudy?.patientName}</p>
             </div>
             <div className="p-6">

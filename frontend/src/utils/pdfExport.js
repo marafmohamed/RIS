@@ -377,7 +377,7 @@ export const downloadPDFReport = async (reportData, settings = {}, clinicData = 
 
         {techniqueItems.length > 0 && (
           <View style={{ marginBottom: 15 }}>
-            <Text style={styles.sectionTitle}>Technique d'examen :</Text>
+            <Text style={styles.sectionTitle}>Technique d&apos;examen :</Text>
             {techniqueItems.map((item, index) => {
               if (item.type === 'image') {
                 return <Image key={index} src={item.src} style={{ height: 150, objectFit: 'contain', marginBottom: 10, alignSelf: item.alignment === 'center' ? 'center' : 'flex-start' }} />;
