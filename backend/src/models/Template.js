@@ -52,6 +52,12 @@ const templateSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  triggerWord: {
+    type: String,
+    trim: true,
+    default: '',
+    index: true
+  },
   createdAt: {
     type: Date,
     default: Date.now

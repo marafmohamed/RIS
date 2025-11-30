@@ -3,10 +3,22 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import { Monitor, Save, X, FileText, Download, LayoutGrid, ChevronDown, Search } from 'lucide-react';
+import { 
+  Monitor, 
+  Save, 
+  X, 
+  FileText, 
+  Download, 
+  LayoutGrid, 
+  ChevronDown, 
+  ChevronUp, 
+  Search, 
+  GripHorizontal 
+} from 'lucide-react';
 import ReportEditorV2 from '@/components/reporting/ReportEditorV2';
 import OHIFViewer from '@/components/reporting/OHIFViewer';
-import { reportsAPI, studiesAPI, templatesAPI } from '@/lib/api';
+import ValidationHistory from '@/components/ValidationHistory';
+import { reportsAPI, studiesAPI, templatesAPI, clinicsAPI } from '@/lib/api';
 import { toast } from 'sonner';
 import { exportToWord } from '@/utils/wordExport';
 import { exportToPDF } from '@/utils/pdfExport';
@@ -17,25 +29,58 @@ export default function ReportingPage({ params }) {
   const clinicId = searchParams.get('clinicId');
   const { studyUid } = params;
 
+  // Data State
   const [study, setStudy] = useState(null);
   const [existingReport, setExistingReport] = useState(null);
   const [reportData, setReportData] = useState({ technique: '', findings: '', conclusion: '' });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [viewerDetached, setViewerDetached] = useState(false);
-  const [viewerMode, setViewerMode] = useState('hidden'); // 'split', 'hidden', 'detached' - default to hidden
+
+  // Viewer and UI State
+  const [viewerMode, setViewerMode] = useState('hidden'); // 'split', 'hidden', 'detached'
   const [detachedWindow, setDetachedWindow] = useState(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+
+  // Templates State
   const [templates, setTemplates] = useState([]);
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
   const [templateSearch, setTemplateSearch] = useState('');
+
+  // Context State
+  const [activeClinic, setActiveClinic] = useState(null);
+
+  // Validation History Terminal State
+  const [showValidationHistory, setShowValidationHistory] = useState(false);
 
   useEffect(() => {
     loadStudyAndReport();
     loadCurrentUser();
     loadTemplates();
-  }, [studyUid]);
+    loadActiveClinic();
+  }, [studyUid, clinicId]);
+
+  // Load the specific clinic selected in dashboard, or fallback to default
+  const loadActiveClinic = async () => {
+    try {
+      const response = await clinicsAPI.getAll();
+      let selectedClinic;
+
+      // 1. Try to find clinic from URL param
+      if (clinicId) {
+        selectedClinic = response.data.find(c => c._id === clinicId);
+      }
+
+      // 2. Fallback to default if not found
+      if (!selectedClinic) {
+        selectedClinic = response.data.find(c => c.isDefault) || response.data[0];
+      }
+
+      setActiveClinic(selectedClinic);
+    } catch (error) {
+      console.error('Failed to fetch clinics:', error);
+    }
+  };
 
   useEffect(() => {
     // Clean up detached window on unmount
@@ -53,7 +98,7 @@ export default function ReportingPage({ params }) {
       // Load study details
       const studyResponse = await studiesAPI.getByUid(studyUid);
       setStudy(studyResponse.data);
-
+      console.log(studyResponse.data)
       // Check if report exists
       try {
         const reportResponse = await reportsAPI.getByStudyUid(studyUid);
@@ -80,7 +125,7 @@ export default function ReportingPage({ params }) {
       }
     } catch (error) {
       console.error('Error loading study:', error);
-      toast.error('Échec du chargement des données de l\'\u00e9tude');
+      toast.error('Échec du chargement des données de l\'étude');
     } finally {
       setLoading(false);
     }
@@ -121,21 +166,12 @@ export default function ReportingPage({ params }) {
 
       setShowTemplateMenu(false);
       setTemplateSearch('');
+      // Standard application toast
       toast.success(`Modèle "${template.name}" appliqué`);
     } catch (error) {
       console.error('Failed to apply template:', error);
       toast.error('Échec de l\'application du modèle');
     }
-  };
-
-  // Extract plain text preview from HTML
-  const getTextPreview = (html) => {
-    if (!html) return '';
-    if (typeof document === 'undefined') return '';
-    const div = document.createElement('div');
-    div.innerHTML = html;
-    const text = div.textContent || div.innerText || '';
-    return text.substring(0, 50) + (text.length > 50 ? '...' : '');
   };
 
   // Parse report content into technique, findings, and conclusion
@@ -229,26 +265,27 @@ export default function ReportingPage({ params }) {
 
     try {
       setSaving(true);
+      const age = calculateAge(study.patientBirthDate);
+
+      const payload = {
+        studyInstanceUid: study.studyInstanceUid || study.studyInstanceUID,
+        patientName: study.patientName,
+        patientId: study.patientId,
+        studyDescription: study.studyDescription,
+        studyDate: study.studyDate,
+        modality: study.modality,
+        content: combinedContent,
+        status: 'DRAFT',
+        patientAge: age !== 'N/A' ? age : study.patientAge
+      };
 
       if (existingReport && existingReport._id) {
         // Update existing report
-        await reportsAPI.update(existingReport._id, {
-          content: combinedContent,
-          status: 'DRAFT'
-        });
+        await reportsAPI.update(existingReport._id, payload);
         toast.success('Rapport mis à jour avec succès');
       } else {
         // Create new report
-        const response = await reportsAPI.create({
-          studyInstanceUid: study.studyInstanceUid,
-          patientName: study.patientName,
-          patientId: study.patientId,
-          studyDescription: study.studyDescription,
-          studyDate: study.studyDate,
-          modality: study.modality,
-          content: combinedContent,
-          status: 'DRAFT'
-        });
+        const response = await reportsAPI.create(payload);
         if (response.data && response.data.report) {
           setExistingReport(response.data.report);
         }
@@ -272,23 +309,24 @@ export default function ReportingPage({ params }) {
 
     try {
       setSaving(true);
+      const age = calculateAge(study.patientBirthDate);
+
+      const payload = {
+        studyInstanceUid: study.studyInstanceUid || study.studyInstanceUID,
+        patientName: study.patientName,
+        patientId: study.patientId,
+        studyDescription: study.studyDescription,
+        studyDate: study.studyDate,
+        modality: study.modality,
+        content: combinedContent,
+        status: 'FINAL',
+        patientAge: age !== 'N/A' ? age : study.patientAge
+      };
 
       if (existingReport && existingReport._id) {
-        await reportsAPI.update(existingReport._id, {
-          content: combinedContent,
-          status: 'FINAL'
-        });
+        await reportsAPI.update(existingReport._id, payload);
       } else {
-        await reportsAPI.create({
-          studyInstanceUid: study.studyInstanceUID,
-          patientName: study.patientName,
-          patientId: study.patientId,
-          studyDescription: study.studyDescription,
-          studyDate: study.studyDate,
-          modality: study.modality,
-          content: combinedContent,
-          status: 'FINAL'
-        });
+        await reportsAPI.create(payload);
       }
 
       toast.success('Rapport finalisé avec succès');
@@ -318,6 +356,7 @@ export default function ReportingPage({ params }) {
       }
 
       const settings = await settingsResponse.json();
+      const age = calculateAge(study.patientBirthDate);
 
       await exportToWord(
         combinedContent,
@@ -326,7 +365,9 @@ export default function ReportingPage({ params }) {
         study.studyDescription,
         study.studyDate,
         settings.HOSPITAL_NAME || settings.hospitalName || 'Medical Center',
-        settings.FOOTER_TEXT || settings.footerText || ''
+        settings.FOOTER_TEXT || settings.footerText || '',
+        activeClinic, // Pass active clinic
+        study.patientAge || 'N/A' // Fixed Age
       );
       toast.success('Document Word exporté avec succès');
       setShowExportMenu(false);
@@ -353,6 +394,7 @@ export default function ReportingPage({ params }) {
       }
 
       const settings = await settingsResponse.json();
+      const age = calculateAge(study.patientBirthDate);
 
       await exportToPDF(
         combinedContent,
@@ -361,13 +403,15 @@ export default function ReportingPage({ params }) {
         study.studyDescription,
         study.studyDate,
         settings.HOSPITAL_NAME || settings.hospitalName || 'Medical Center',
-        settings.FOOTER_TEXT || settings.footerText || ''
+        settings.FOOTER_TEXT || settings.footerText || '',
+        activeClinic, // Pass active clinic
+        study.patientAge || 'N/A'
       );
       toast.success('PDF exporté avec succès');
       setShowExportMenu(false);
     } catch (error) {
       console.error('Export error:', error);
-      toast.error(`Échec de l\'exportation du PDF : ${error.message}`);
+      toast.error(`Échec de l'exportation du PDF : ${error.message}`);
     }
   };
 
@@ -398,15 +442,19 @@ export default function ReportingPage({ params }) {
     );
   }
 
+  // Determine if the footer bar should appear
+  const hasValidationHistory = existingReport && existingReport.status === 'FINAL' && (existingReport.validationCount > 0 || existingReport.averageRating > 0);
+
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-2 shadow-lg flex items-center justify-between">
+    <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
+      {/* 1. Header Section */}
+      <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-2 shadow-lg flex items-center justify-between flex-shrink-0 z-20">
         <div className="flex items-center space-x-3">
           <div className="min-w-0 flex-shrink">
             <h1 className="text-sm md:text-base font-bold truncate">{study.patientName}</h1>
             <p className="text-xs text-blue-100 truncate hidden sm:block">
-              ID: {study.patientId || 'N/A'} • Âge: {calculateAge(study.patientBirthDate)} • {study.studyDescription}
+              {/* FIXED AGE DISPLAY */}
+              ID: {study.patientId || 'N/A'} • Âge: {study.patientAge || 'N/A'} • {study.studyDescription}
             </p>
             <p className="text-xs text-blue-100 truncate sm:hidden">
               ID: {study.patientId || 'N/A'}
@@ -579,20 +627,36 @@ export default function ReportingPage({ params }) {
         </div>
       </div>
 
-      {/* Split Panel Layout */}
-      <div className="flex-1 overflow-hidden">
-        {viewerMode === 'split' ? (
-          <PanelGroup direction="horizontal">
-            {/* Left Panel - OHIF Viewer */}
-            <Panel defaultSize={50} minSize={30}>
-              <OHIFViewer studyUid={studyUid} clinicId={clinicId} />
-            </Panel>
+      {/* 2. Main Vertical Split: Top (Workspace) & Bottom (Validation Terminal) */}
+      <PanelGroup direction="vertical" className="flex-1 overflow-hidden">
+        
+        {/* Top Panel: Contains Viewer and Editor */}
+        <Panel order={1} className="flex flex-col min-h-0">
+          <div className="flex-1 overflow-hidden h-full relative">
+            {viewerMode === 'split' ? (
+              <PanelGroup direction="horizontal">
+                {/* Left Panel - OHIF Viewer */}
+                <Panel defaultSize={50} minSize={30}>
+                  <OHIFViewer studyUid={studyUid} clinicId={clinicId} />
+                </Panel>
 
-            {/* Resize Handle */}
-            <PanelResizeHandle className="w-1 bg-gray-300 hover:bg-blue-500 transition-colors cursor-col-resize" />
+                {/* Resize Handle */}
+                <PanelResizeHandle className="w-1 bg-gray-300 hover:bg-blue-500 transition-colors cursor-col-resize z-10" />
 
-            {/* Right Panel - Report Editor */}
-            <Panel defaultSize={50} minSize={30}>
+                {/* Right Panel - Report Editor */}
+                <Panel defaultSize={50} minSize={30}>
+                  <ReportEditorV2
+                    initialTechnique={reportData.technique}
+                    initialFindings={reportData.findings}
+                    initialConclusion={reportData.conclusion}
+                    onChange={setReportData}
+                    readOnly={currentUser?.role === 'VIEWER' || currentUser?.role === 'REFERRING_PHYSICIAN'}
+                    onTemplateApply={handleApplyTemplate}
+                    templates={templates}
+                  />
+                </Panel>
+              </PanelGroup>
+            ) : (
               <ReportEditorV2
                 initialTechnique={reportData.technique}
                 initialFindings={reportData.findings}
@@ -602,19 +666,55 @@ export default function ReportingPage({ params }) {
                 onTemplateApply={handleApplyTemplate}
                 templates={templates}
               />
+            )}
+          </div>
+        </Panel>
+
+        {/* Validation History Resizable Section */}
+        {showValidationHistory && hasValidationHistory && (
+          <>
+            <PanelResizeHandle className="h-2 bg-gray-100 hover:bg-blue-500 border-t border-gray-300 cursor-row-resize flex items-center justify-center transition-colors">
+               <GripHorizontal size={14} className="text-gray-400" />
+            </PanelResizeHandle>
+            
+            <Panel order={2} defaultSize={25} minSize={10} maxSize={100} className="bg-white flex flex-col min-h-0">
+              <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-200 sticky top-0">
+                <h3 className="text-sm font-semibold text-gray-700">Historique de Validation</h3>
+                <button 
+                  onClick={() => setShowValidationHistory(false)}
+                  className="p-1 hover:bg-gray-200 rounded text-gray-600"
+                  title="Masquer"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 bg-gray-50/50">
+                <ValidationHistory report={existingReport} />
+              </div>
             </Panel>
-          </PanelGroup>
-        ) : (
-          <ReportEditorV2
-            initialTechnique={reportData.technique}
-            initialFindings={reportData.findings}
-            initialConclusion={reportData.conclusion}
-            onChange={setReportData}
-            readOnly={currentUser?.role === 'VIEWER' || currentUser?.role === 'REFERRING_PHYSICIAN'}
-            onTemplateApply={handleApplyTemplate}
-          />
+          </>
         )}
-      </div>
+      </PanelGroup>
+
+      {/* 3. Footer Toggle Bar (Visible if report is finalized and has history) */}
+      {hasValidationHistory && (
+        <div 
+          onClick={() => setShowValidationHistory(!showValidationHistory)}
+          className={`
+            border-t border-gray-300 px-4 py-1.5 flex items-center justify-between cursor-pointer 
+            text-xs font-medium select-none transition-colors flex-shrink-0
+            ${showValidationHistory ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}
+          `}
+        >
+          <div className="flex items-center gap-2">
+            {showValidationHistory ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+            <span>Historique de validation & Notes</span>
+            <span className="px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px]">
+              {existingReport.validationCount || 0}
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -25,6 +25,7 @@
     "date-fns": "^3.0.6",
     "docx": "^9.5.1",
     "file-saver": "^2.0.5",
+    "framer-motion": "^12.23.24",
     "html-to-docx": "^1.8.0",
     "lucide-react": "^0.554.0",
     "next": "14.2.0",

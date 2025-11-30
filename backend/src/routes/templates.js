@@ -12,7 +12,7 @@ router.use(authMiddleware);
 router.get('/', async (req, res) => {
   try {
     const { modality, studyType } = req.query;
-    
+
     // Build filter to get user's own templates OR default templates from others
     const filter = {
       $or: [
@@ -20,11 +20,11 @@ router.get('/', async (req, res) => {
         { isDefault: true }
       ]
     };
-    
+
     if (modality) {
       filter.modality = modality;
     }
-    
+
     if (studyType) {
       filter.studyType = studyType;
     }
@@ -79,7 +79,8 @@ router.post('/', [
       technique,
       findings,
       conclusion,
-      isDefault
+      isDefault,
+      triggerWord
     } = req.body;
 
     // If setting as default, unset other defaults for same modality
@@ -99,7 +100,8 @@ router.post('/', [
       technique: technique || '',
       findings: findings || '',
       conclusion: conclusion || '',
-      isDefault: isDefault || false
+      isDefault: isDefault || false,
+      triggerWord: triggerWord || ''
     });
 
     res.status(201).json({
@@ -115,6 +117,7 @@ router.post('/', [
 // Update template
 router.put('/:id', async (req, res) => {
   try {
+
     const {
       name,
       description,
@@ -123,12 +126,12 @@ router.put('/:id', async (req, res) => {
       technique,
       findings,
       conclusion,
-      isDefault
+      isDefault,
+      triggerWord
     } = req.body;
 
     const template = await Template.findOne({
-      _id: req.params.id,
-      userId: req.user._id
+      _id: req.params.id
     });
 
     if (!template) {
@@ -151,6 +154,7 @@ router.put('/:id', async (req, res) => {
     if (findings !== undefined) template.findings = findings;
     if (conclusion !== undefined) template.conclusion = conclusion;
     if (isDefault !== undefined) template.isDefault = isDefault;
+    if (triggerWord !== undefined) template.triggerWord = triggerWord;
 
     await template.save();
 

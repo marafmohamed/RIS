@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import RichTextEditor from '@/components/RichTextEditor';
 import DicomViewer from '@/components/DicomViewer';
-import { studiesAPI, reportsAPI } from '@/lib/api';
+import { studiesAPI, reportsAPI, clinicsAPI } from '@/lib/api';
 import { toast } from 'sonner';
 import { FiSave, FiCheckCircle, FiArrowLeft, FiDownload, FiFileText } from 'react-icons/fi';
 import { format } from 'date-fns';
@@ -26,9 +26,22 @@ export default function ReportPage() {
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
 
+  const [defaultClinic, setDefaultClinic] = useState(null);
+
   useEffect(() => {
     fetchStudyAndReport();
+    fetchDefaultClinic();
   }, [studyUid]);
+
+  const fetchDefaultClinic = async () => {
+    try {
+      const response = await clinicsAPI.getAll();
+      const defaultC = response.data.find(c => c.isDefault) || response.data[0];
+      setDefaultClinic(defaultC);
+    } catch (error) {
+      console.error('Failed to fetch clinics:', error);
+    }
+  };
 
   const fetchStudyAndReport = async () => {
     setLoading(true);
@@ -150,11 +163,11 @@ export default function ReportPage() {
       };
 
       const settings = {
-        hospitalName: settingsResponse.data.HOSPITAL_NAME || "l'EPH MAZOUNA",
-        footerText: settingsResponse.data.FOOTER_TEXT || 'Cité Bousrour en face les pompiers Mazouna Relizane   Tel 0779 00 46 56   حي بوسرور مقابل الحماية المدنية مازونة غليزان'
+        hospitalName: defaultClinic?.name || settingsResponse.data.HOSPITAL_NAME || "l'EPH MAZOUNA",
+        footerText: defaultClinic?.address || settingsResponse.data.FOOTER_TEXT || 'Cité Bousrour en face les pompiers Mazouna Relizane   Tel 0779 00 46 56   حي بوسرور مقابل الحماية المدنية مازونة غليزان'
       };
 
-      await downloadWordReport(reportData, settings);
+      await downloadWordReport(reportData, defaultClinic, settings, study.patientAge);
       toast.success('Word document exported successfully');
     } catch (error) {
       console.error('Export error:', error);
@@ -186,11 +199,11 @@ export default function ReportPage() {
       };
 
       const settings = {
-        hospitalName: settingsResponse.data.HOSPITAL_NAME || "l'EPH MAZOUNA",
-        footerText: settingsResponse.data.FOOTER_TEXT || 'Cité Bousrour en face les pompiers Mazouna Relizane   Tel 0779 00 46 56   حي بوسرور مقابل الحماية المدنية مازونة غليزان'
+        hospitalName: defaultClinic?.name || settingsResponse.data.HOSPITAL_NAME || "l'EPH MAZOUNA",
+        footerText: defaultClinic?.address || settingsResponse.data.FOOTER_TEXT || 'Cité Bousrour en face les pompiers Mazouna Relizane   Tel 0779 00 46 56   حي بوسرور مقابل الحماية المدنية مازونة غليزان'
       };
 
-      await downloadPDFReport(reportData, settings);
+      await downloadPDFReport(reportData, settings, defaultClinic, study.patientAge);
       toast.success('PDF exported successfully');
     } catch (error) {
       console.error('Export error:', error);
@@ -233,7 +246,7 @@ export default function ReportPage() {
   return (
     <>
       <Navbar />
-      
+
       {/* Header */}
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-full px-4 py-4">
@@ -286,7 +299,7 @@ export default function ReportPage() {
                   {saving ? 'Saving...' : 'Save Draft'}
                 </button>
               )}
-              
+
               {report?.status !== 'FINAL' && (
                 <button
                   onClick={handleFinalize}

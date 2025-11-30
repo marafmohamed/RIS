@@ -7,10 +7,11 @@ import { reportsAPI, usersAPI } from '@/lib/api';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import {
-  FiEye, FiFilter, FiUsers, FiFileText, FiCheckCircle, FiEdit3, FiLayers
+  FiEye, FiFilter, FiUsers, FiFileText, FiCheckCircle, FiEdit3, FiLayers, FiStar, FiMessageSquare
 } from 'react-icons/fi';
 import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
+import ValidationHistory from '@/components/ValidationHistory';
 
 export default function ReportsPage() {
   const router = useRouter();
@@ -24,6 +25,8 @@ export default function ReportsPage() {
   // UI State
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('list'); // 'list' | 'stats'
+  const [showValidationModal, setShowValidationModal] = useState(false);
+  const [selectedReport, setSelectedReport] = useState(null);
 
   // Filters
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -235,6 +238,8 @@ export default function ReportsPage() {
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Auteur</th>
                           )}
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statut</th>
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Validations</th>
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Note</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dernière Modif.</th>
                           <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
                         </tr>
@@ -262,17 +267,61 @@ export default function ReportsPage() {
                             <td className="px-6 py-4 whitespace-nowrap">
                               <StatusBadge status={report.status} />
                             </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              {report.status === 'FINAL' && report.validationCount > 0 ? (
+                                <button
+                                  onClick={() => {
+                                    setSelectedReport(report);
+                                    setShowValidationModal(true);
+                                  }}
+                                  className="inline-flex items-center px-2.5 py-1.5 rounded-md text-xs font-medium bg-green-100 text-green-800 hover:bg-green-200 transition-colors"
+                                >
+                                  <FiCheckCircle className="mr-1 h-3 w-3" />
+                                  {report.validationCount}
+                                </button>
+                              ) : (
+                                <span className="text-xs text-gray-400">-</span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              {report.status === 'FINAL' && report.averageRating > 0 ? (
+                                <button
+                                  onClick={() => {
+                                    setSelectedReport(report);
+                                    setShowValidationModal(true);
+                                  }}
+                                  className="inline-flex items-center px-2.5 py-1.5 rounded-md text-xs font-medium bg-yellow-100 text-yellow-800 hover:bg-yellow-200 transition-colors"
+                                >
+                                  <FiStar className="mr-1 h-3 w-3" />
+                                  {report.averageRating.toFixed(1)}
+                                </button>
+                              ) : (
+                                <span className="text-xs text-gray-400">-</span>
+                              )}
+                            </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                               {format(new Date(report.updatedAt), 'dd MMM HH:mm')}
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
                               <Link
                                 href={`/reporting/${report.studyInstanceUid}`}
-                                className="text-blue-600 hover:text-blue-900 flex items-center justify-end gap-1"
+                                className="text-blue-600 hover:text-blue-900 inline-flex items-center gap-1"
                               >
                                 {report.status === 'FINAL' ? <FiEye /> : <FiEdit3 />}
                                 <span>{report.status === 'FINAL' ? 'Voir' : 'Éditer'}</span>
                               </Link>
+                              {report.status === 'FINAL' && (report.validationCount > 0 || report.averageRating > 0) && (
+                                <button
+                                  onClick={() => {
+                                    setSelectedReport(report);
+                                    setShowValidationModal(true);
+                                  }}
+                                  className="text-gray-600 hover:text-gray-900 inline-flex items-center gap-1"
+                                  title="Voir validations"
+                                >
+                                  <FiMessageSquare />
+                                </button>
+                              )}
                             </td>
                           </tr>
                         ))}
@@ -391,6 +440,47 @@ export default function ReportsPage() {
           </div>
         )}
       </div>
+
+      {/* Validation History Modal */}
+      {showValidationModal && selectedReport && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Validations et Notes</h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  Patient: <strong>{selectedReport.patientName}</strong> ({selectedReport.patientId})
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowValidationModal(false);
+                  setSelectedReport(null);
+                }}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6">
+              <ValidationHistory report={selectedReport} />
+            </div>
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={() => {
+                  setShowValidationModal(false);
+                  setSelectedReport(null);
+                }}
+                className="btn btn-secondary"
+              >
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

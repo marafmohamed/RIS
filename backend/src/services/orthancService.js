@@ -148,7 +148,7 @@ class OrthancService {
     let age = patientMainDicomTags.PatientAge || mainDicomTags.PatientAge;
     
     // Only calculate if age tag is missing AND we have a BirthDate
-    if ((!age || age === '000Y') && patientMainDicomTags.PatientBirthDate) {
+    if ((!age || age === '000') && patientMainDicomTags.PatientBirthDate) {
         age = this.calculateAge(patientMainDicomTags.PatientBirthDate, mainDicomTags.StudyDate);
     }
 
@@ -183,32 +183,47 @@ class OrthancService {
   }
 
   calculateAge(birthDate, studyDate) {
-    // Safety check for empty birthdate strings
     if (!birthDate || birthDate.length !== 8) return null;
 
     const birthYear = parseInt(birthDate.substring(0, 4));
-    const birthMonth = parseInt(birthDate.substring(4, 6));
+    const birthMonth = parseInt(birthDate.substring(4, 6)) - 1; // 0-indexed
     const birthDay = parseInt(birthDate.substring(6, 8));
 
     let refYear, refMonth, refDay;
     
     if (studyDate && studyDate.length === 8) {
       refYear = parseInt(studyDate.substring(0, 4));
-      refMonth = parseInt(studyDate.substring(4, 6));
+      refMonth = parseInt(studyDate.substring(4, 6)) - 1; // 0-indexed
       refDay = parseInt(studyDate.substring(6, 8));
     } else {
       const today = new Date();
       refYear = today.getFullYear();
-      refMonth = today.getMonth() + 1;
+      refMonth = today.getMonth(); // 0-indexed
       refDay = today.getDate();
     }
 
-    let age = refYear - birthYear;
-    if (refMonth < birthMonth || (refMonth === birthMonth && refDay < birthDay)) {
-      age--;
+    const birthDateObj = new Date(birthYear, birthMonth, birthDay);
+    const refDateObj = new Date(refYear, refMonth, refDay);
+
+    if (refDateObj < birthDateObj) {
+      return null; // Study date cannot be before birth date
     }
 
-    return age >= 0 ? `${age}Y` : null;
+    let ageYears = refYear - birthYear;
+    if (refMonth < birthMonth || (refMonth === birthMonth && refDay < birthDay)) {
+      ageYears--;
+    }
+
+    if (ageYears < 2) { // For patients under 2 years old, show age in months
+      let ageMonths = (refYear - birthYear) * 12 + (refMonth - birthMonth);
+      if (refDay < birthDay) {
+        ageMonths--;
+      }
+      // Ensure age in months is not negative
+      return ageMonths >= 0 ? `${ageMonths}Mois` : null;
+    }
+
+    return ageYears >= 0 ? `${ageYears}Ans` : null;
   }
 }
 

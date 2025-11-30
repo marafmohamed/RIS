@@ -9,7 +9,7 @@ import {
   Search, Filter, Download, UserPlus,
   FileCheck, FileClock, FileX, Inbox,
   ChevronRight, ChevronLeft, Building2, Activity, Calendar,
-  FileText
+  FileText, Loader2
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useAuth } from '@/lib/AuthContext';
@@ -27,6 +27,7 @@ export default function DashboardPage() {
 
   // UI State
   const [loading, setLoading] = useState(true);
+  const [isNavigating, setIsNavigating] = useState(false);
   const [activeFilter, setActiveFilter] = useState('all');
   const [showAssignModal, setShowAssignModal] = useState(false);
 
@@ -87,6 +88,13 @@ export default function DashboardPage() {
     setCurrentPage(1);
   }, [activeFilter, filters]);
 
+  // NEW: Force restricted users to 'final' view only
+  useEffect(() => {
+    if (user && ['VIEWER', 'REFERRING_PHYSICIAN'].includes(user.role)) {
+      setActiveFilter('final');
+    }
+  }, [user]);
+
   const fetchClinics = async () => {
     try {
       const response = await clinicsAPI.getAll();
@@ -144,7 +152,7 @@ export default function DashboardPage() {
         studyDate: selectedStudy.studyDate,
         modality: selectedStudy.modality,
         studyDescription: selectedStudy.studyDescription,
-        patientAge: selectedStudy.patientAge // Ensure Age is passed to report
+        patientAge: selectedStudy.patientAge
       });
 
       toast.success('Étude assignée avec succès');
@@ -168,7 +176,9 @@ export default function DashboardPage() {
       }
       const report = reportResponse.data.data;
       const clinic = clinics.find(c => c._id === filters.clinicId);
-      await generatePDF(report, clinic);
+      
+      await generatePDF(report, clinic, study.patientAge);
+      
       toast.success('PDF téléchargé avec succès');
     } catch (error) {
       console.error('Failed to download PDF:', error);
@@ -185,7 +195,9 @@ export default function DashboardPage() {
       }
       const report = reportResponse.data.data;
       const clinic = clinics.find(c => c._id === filters.clinicId);
-      await generateWordDocument(report, clinic);
+      
+      await generateWordDocument(report, clinic, study.patientAge);
+      
       toast.success('Document Word téléchargé avec succès');
     } catch (error) {
       console.error('Failed to download Word:', error);
@@ -194,6 +206,7 @@ export default function DashboardPage() {
   };
 
   const handleRowDoubleClick = (study) => {
+    setIsNavigating(true);
     const clinicParam = filters.clinicId ? `?clinicId=${filters.clinicId}` : '';
     router.push(`/reporting/${study.studyInstanceUid}${clinicParam}`);
   };
@@ -214,7 +227,6 @@ export default function DashboardPage() {
         result = result.filter(s => s.assignedTo?._id === user?._id);
         break;
     }
-    // Client-side backup for Modality if backend filtering isn't strict
     if (filters.modality) {
       result = result.filter(s => s.modality && s.modality.includes(filters.modality));
     }
@@ -229,22 +241,6 @@ export default function DashboardPage() {
 
   const paginate = (pageNumber) => setCurrentPage(pageNumber);
 
-  const filterButtons = [
-    { id: 'all', label: 'Tous', icon: Inbox, count: studies.length },
-    { id: 'unreported', label: 'Non rapportés', icon: FileX, count: studies.filter(s => s.reportStatus === 'UNREPORTED').length },
-    { id: 'draft', label: 'Brouillons', icon: FileClock, count: studies.filter(s => s.reportStatus === 'DRAFT').length },
-    { id: 'final', label: 'Finalisés', icon: FileCheck, count: studies.filter(s => s.reportStatus === 'FINAL').length },
-  ];
-
-  if (user?.role === 'RADIOLOGIST') {
-    filterButtons.push({
-      id: 'assigned',
-      label: 'Assignés à moi',
-      icon: UserPlus,
-      count: studies.filter(s => s.assignedTo?._id === user?._id).length
-    });
-  }
-
   const getStatusBadge = (status) => {
     const badges = {
       UNREPORTED: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Non rapporté' },
@@ -255,8 +251,50 @@ export default function DashboardPage() {
     return badges[status] || badges.UNREPORTED;
   };
 
+  // --- MODIFIED FILTER BUTTONS LOGIC ---
+  const isRestrictedUser = user && ['VIEWER', 'REFERRING_PHYSICIAN'].includes(user.role);
+  let filterButtons = [];
+
+  if (isRestrictedUser) {
+    // Restricted users only see Finalized
+    filterButtons = [
+      { 
+        id: 'final', 
+        label: 'Finalisés', 
+        icon: FileCheck, 
+        count: studies.filter(s => s.reportStatus === 'FINAL').length 
+      }
+    ];
+  } else {
+    // Normal users see the full workflow
+    filterButtons = [
+      { id: 'all', label: 'Tous', icon: Inbox, count: studies.length },
+      { id: 'unreported', label: 'Non rapportés', icon: FileX, count: studies.filter(s => s.reportStatus === 'UNREPORTED').length },
+      { id: 'draft', label: 'Brouillons', icon: FileClock, count: studies.filter(s => s.reportStatus === 'DRAFT').length },
+      { id: 'final', label: 'Finalisés', icon: FileCheck, count: studies.filter(s => s.reportStatus === 'FINAL').length },
+    ];
+
+    if (user?.role === 'RADIOLOGIST') {
+      filterButtons.push({
+        id: 'assigned',
+        label: 'Assignés à moi',
+        icon: UserPlus,
+        count: studies.filter(s => s.assignedTo?._id === user?._id).length
+      });
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
+      {isNavigating && (
+        <div className="fixed inset-0 bg-white/80 backdrop-blur-sm z-[9999] flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="h-10 w-10 animate-spin text-blue-600" />
+            <p className="text-blue-900 font-medium">Ouverture du dossier patient...</p>
+          </div>
+        </div>
+      )}
+
       <Navbar />
 
       <div className="flex h-[calc(100vh-64px)]">
@@ -499,28 +537,10 @@ export default function DashboardPage() {
                     </tbody>
                   </table>
                 </div>
-                {/* Pagination (Same as before) */}
+                {/* Pagination */}
                 {totalPages > 1 && (
                   <div className="border-t border-gray-200 bg-white px-4 py-3 sm:px-6 shrink-0 rounded-b-lg">
                     <div className="flex items-center justify-between">
-                      {/* Mobile */}
-                      <div className="flex flex-1 justify-between sm:hidden">
-                        <button
-                          onClick={() => paginate(currentPage - 1)}
-                          disabled={currentPage === 1}
-                          className="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                        >
-                          Précédent
-                        </button>
-                        <button
-                          onClick={() => paginate(currentPage + 1)}
-                          disabled={currentPage === totalPages}
-                          className="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                        >
-                          Suivant
-                        </button>
-                      </div>
-                      {/* Desktop */}
                       <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
                         <div>
                           <p className="text-sm text-gray-700">
@@ -532,7 +552,7 @@ export default function DashboardPage() {
                             <button
                               onClick={() => paginate(currentPage - 1)}
                               disabled={currentPage === 1}
-                              className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                              className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
                             >
                               <span className="sr-only">Précédent</span>
                               <ChevronLeft className="h-5 w-5" aria-hidden="true" />
@@ -546,7 +566,7 @@ export default function DashboardPage() {
                                   onClick={() => paginate(page)}
                                   className={`relative inline-flex items-center px-4 py-2 text-sm font-semibold ${currentPage === page
                                     ? 'z-10 bg-blue-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600'
-                                    : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0'
+                                    : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50'
                                     }`}
                                 >
                                   {page}
@@ -556,7 +576,7 @@ export default function DashboardPage() {
                             <button
                               onClick={() => paginate(currentPage + 1)}
                               disabled={currentPage === totalPages}
-                              className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                              className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
                             >
                               <span className="sr-only">Suivant</span>
                               <ChevronRight className="h-5 w-5" aria-hidden="true" />
@@ -573,7 +593,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Assignment Modal (Same as before) */}
       {showAssignModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowAssignModal(false)}>
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
@@ -586,7 +605,7 @@ export default function DashboardPage() {
               <select
                 value={selectedRadiologist}
                 onChange={(e) => setSelectedRadiologist(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">-- Choisir --</option>
                 {radiologists.map((rad) => (
@@ -597,18 +616,8 @@ export default function DashboardPage() {
               </select>
             </div>
             <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
-              <button
-                onClick={() => setShowAssignModal(false)}
-                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Annuler
-              </button>
-              <button
-                onClick={handleAssignStudy}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                Assigner
-              </button>
+              <button onClick={() => setShowAssignModal(false)} className="px-4 py-2 border rounded-lg">Annuler</button>
+              <button onClick={handleAssignStudy} className="px-4 py-2 bg-blue-600 text-white rounded-lg">Assigner</button>
             </div>
           </div>
         </div>

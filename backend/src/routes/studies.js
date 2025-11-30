@@ -66,15 +66,20 @@ router.get('/', async (req, res) => {
     // 4. Get all reports for these studies to merge status
     const studyUids = studies.map(s => s.studyInstanceUid);
 
-    // Build report filter
+    // Build report filter based on user role
     const reportFilter = { studyInstanceUid: { $in: studyUids } };
 
-    if (req.user.role !== 'ADMIN') {
+    // VIEWER and REFERRING_PHYSICIAN: Only see FINAL reports (no author filter)
+    // RADIOLOGIST: Only see their own reports
+    // ADMIN: See all reports
+    if (req.user.role === 'VIEWER' || req.user.role === 'REFERRING_PHYSICIAN') {
+      reportFilter.status = 'FINAL';
+    } else if (req.user.role !== 'ADMIN') {
       reportFilter.authorId = req.user._id;
     }
 
     const reports = await Report.find(reportFilter)
-      .select('studyInstanceUid status authorName authorId updatedAt assignedTo assignedBy assignedAt')
+      .select('studyInstanceUid status authorName authorId updatedAt assignedTo assignedBy assignedAt validatedBy ratings averageRating validationCount')
       .populate('assignedTo', 'fullName')
       .populate('assignedBy', 'fullName');
 
@@ -88,7 +93,11 @@ router.get('/', async (req, res) => {
         authorId: report.authorId,
         assignedTo: report.assignedTo,
         assignedBy: report.assignedBy,
-        assignedAt: report.assignedAt
+        assignedAt: report.assignedAt,
+        validatedBy: report.validatedBy,
+        ratings: report.ratings,
+        averageRating: report.averageRating,
+        validationCount: report.validationCount
       };
     });
     // 5. Merge study data with report status
@@ -102,12 +111,22 @@ router.get('/', async (req, res) => {
         reportAuthorId: report?.authorId || null,
         assignedTo: report?.assignedTo || null,
         assignedBy: report?.assignedBy || null,
-        assignedAt: report?.assignedAt || null
+        assignedAt: report?.assignedAt || null,
+        validatedBy: report?.validatedBy || [],
+        ratings: report?.ratings || [],
+        averageRating: report?.averageRating || 0,
+        validationCount: report?.validationCount || 0
       };
     });
 
     // 6. Role based final filtering
-    if (req.user.role !== 'ADMIN') {
+    if (req.user.role === 'VIEWER' || req.user.role === 'REFERRING_PHYSICIAN') {
+      // Only show studies with FINAL reports
+      studiesWithStatus = studiesWithStatus.filter(study =>
+        study.reportStatus === 'FINAL'
+      );
+    } else if (req.user.role !== 'ADMIN') {
+      // RADIOLOGIST: Show unreported studies or their own reports or assigned studies
       studiesWithStatus = studiesWithStatus.filter(study =>
         study.reportStatus === 'UNREPORTED' ||
         study.reportAuthorId?.toString() === req.user._id.toString() ||
