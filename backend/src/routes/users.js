@@ -14,6 +14,7 @@ router.get('/', adminOnly, async (req, res) => {
   try {
     const users = await User.find()
       .select('-password')
+      .populate('allowedClinics', 'name')
       .sort({ createdAt: -1 });
     res.json(users);
   } catch (error) {
@@ -35,7 +36,7 @@ router.post('/', adminOnly, [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { email, password, fullName, role } = req.body;
+    const { email, password, fullName, role, allowedClinics } = req.body;
 
     // Check if user exists
     const existingUser = await User.findOne({ email });
@@ -51,7 +52,8 @@ router.post('/', adminOnly, [
       email,
       password: hashedPassword,
       fullName,
-      role
+      role,
+      allowedClinics: allowedClinics || []
     });
 
     res.status(201).json({
@@ -60,7 +62,8 @@ router.post('/', adminOnly, [
         _id: user._id,
         email: user.email,
         fullName: user.fullName,
-        role: user.role
+        role: user.role,
+        allowedClinics: user.allowedClinics
       }
     });
   } catch (error) {
@@ -72,7 +75,7 @@ router.post('/', adminOnly, [
 // Update user (Admin only)
 router.put('/:id', adminOnly, async (req, res) => {
   try {
-    const { fullName, role, isActive } = req.body;
+    const { fullName, role, isActive, password, allowedClinics } = req.body;
 
     const user = await User.findById(req.params.id);
     if (!user) {
@@ -82,12 +85,23 @@ router.put('/:id', adminOnly, async (req, res) => {
     if (fullName) user.fullName = fullName;
     if (role) user.role = role;
     if (typeof isActive === 'boolean') user.isActive = isActive;
+    if (allowedClinics !== undefined) user.allowedClinics = allowedClinics;
+    
+    // Update password if provided
+    if (password && password.length >= 6) {
+      user.password = await bcrypt.hash(password, 10);
+    }
 
     await user.save();
 
+    // Return populated user
+    const updatedUser = await User.findById(user._id)
+      .select('-password')
+      .populate('allowedClinics', 'name');
+
     res.json({
       message: 'User updated successfully',
-      user
+      user: updatedUser
     });
   } catch (error) {
     console.error('Update user error:', error);

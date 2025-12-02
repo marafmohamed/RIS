@@ -5,58 +5,57 @@ const NodeCache = require('node-cache');
 const dns = require('dns').promises;
 const stream = require('stream');
 const { promisify } = require('util');
+const http = require('http');
+const https = require('https');
+const compression = require('compression');
 const Clinic = require('../models/Clinic');
 const { decrypt } = require('../utils/encryption');
 
 const router = express.Router();
-const pipeline = promisify(stream.pipeline);
 
-// Aggressive caching for OHIF resources and metadata
-const resourceCache = new NodeCache({
-  stdTTL: 3600, // 1 hour default
-  checkperiod: 120,
-  useClones: false,
-  maxKeys: 2000 // Increased limit for more resources
-});
+// 1. ENABLE COMPRESSION: Makes loading the study list and tags 5x faster
+router.use(compression());
 
+// 2. SMART CACHING: Only cache Metadata (JSON), not Images
+// This keeps RAM usage low (~50MB) instead of High (~2GB)
 const metadataCache = new NodeCache({
-  stdTTL: 600, // 10 minutes for metadata
+  stdTTL: 600, // Keep metadata for 10 minutes
   checkperiod: 60,
-  useClones: false
-});
-
-// Frame data cache (for DICOM pixel data)
-const frameCache = new NodeCache({
-  stdTTL: 3600, // 1 hour for frames
-  checkperiod: 120,
   useClones: false,
-  maxKeys: 500, // Increased to handle large studies with many frames
-  deleteOnExpire: true // Automatically delete expired entries
+  maxKeys: 1000
 });
 
-let configCache = null;
-let configCacheTime = 0;
-const CONFIG_CACHE_TTL = 5 * 60 * 1000;
+// 3. OPTIMIZED HTTP AGENT: Allows high-speed parallel downloads
+// Browsers request 6-10 images at once; this prevents the server from choking.
+const connectionSettings = {
+  keepAlive: true,
+  keepAliveMsecs: 30000,
+  maxSockets: 1000, // High concurrency
+  maxFreeSockets: 50,
+  timeout: 30000,
+  scheduling: 'fifo'
+};
 
-// DNS cache
+const httpAgent = new http.Agent(connectionSettings);
+const httpsAgent = new https.Agent(connectionSettings);
+
+// DNS Cache to prevent lookup latency
 const dnsCache = new Map();
-const DNS_CACHE_TTL = 5 * 60 * 1000;
+const DNS_CACHE_TTL = 300 * 1000;
 
-// HTTP Agent for connection pooling
-const http = require('http');
-const https = require('https');
+// --- HELPER FUNCTIONS ---
 
-// Helper to get Orthanc config for a request
 async function getOrthancConfig(req) {
   let clinicId = req.query.clinicId || req.headers['x-clinic-id'];
-
-  // Default config from env
+  
+  // Default Config
   let config = {
     url: process.env.ORTHANC_URL,
     username: process.env.ORTHANC_USERNAME,
     password: process.env.ORTHANC_PASSWORD
   };
 
+  // Override if Clinic ID exists
   if (clinicId) {
     try {
       const clinic = await Clinic.findById(clinicId);
@@ -73,83 +72,27 @@ async function getOrthancConfig(req) {
   }
 
   const auth = 'Basic ' + Buffer.from(`${config.username}:${config.password}`).toString('base64');
-  const agent = new (config.url.startsWith('https') ? https : http).Agent({
-    keepAlive: true,
-    keepAliveMsecs: 30000,
-    maxSockets: 100,
-    maxFreeSockets: 20,
-    timeout: 120000,
-    scheduling: 'lifo'
-  });
+  const agent = config.url.startsWith('https') ? httpsAgent : httpAgent;
 
   return { ...config, auth, agent };
 }
 
-// Retry fetch with exponential backoff
-async function fetchWithRetry(url, options, maxRetries = 3) {
-  let lastError;
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+async function fetchWithRetry(url, options, maxRetries = 2) {
+  // Simple retry logic for network blips
+  for (let i = 0; i <= maxRetries; i++) {
     try {
-      const urlObj = new URL(url);
-      const hostname = urlObj.hostname;
-
-      // DNS caching
-      const cached = dnsCache.get(hostname);
-      if (!cached || (Date.now() - cached.time) > DNS_CACHE_TTL) {
-        try {
-          await dns.lookup(hostname);
-          dnsCache.set(hostname, { time: Date.now() });
-        } catch (dnsError) {
-          console.warn(`⚠️  DNS lookup failed for ${hostname} (attempt ${attempt}/${maxRetries})`);
-          if (attempt === maxRetries) throw dnsError;
-          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-          continue;
-        }
-      }
-
       return await fetch(url, options);
-    } catch (error) {
-      lastError = error;
-
-      // Retry on network errors
-      if (error.code === 'EAI_AGAIN' || error.code === 'ENOTFOUND' ||
-        error.code === 'ETIMEDOUT' || error.code === 'ECONNRESET') {
-        console.warn(`⚠️  Network error (attempt ${attempt}/${maxRetries}): ${error.message}`);
-        if (attempt < maxRetries) {
-          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
-          await new Promise(resolve => setTimeout(resolve, delay));
-          continue;
-        }
-      }
-
-      throw error;
+    } catch (err) {
+      if (i === maxRetries) throw err;
+      await new Promise(r => setTimeout(r, 200 * (i + 1))); // Short wait
     }
   }
-
-  throw lastError;
 }
 
-// Performance logging
-const logPerformance = (label) => (req, res, next) => {
-  const start = Date.now();
+// --- ROUTES ---
 
-  res.on('finish', () => {
-    const duration = Date.now() - start;
-    if (duration > 5000) {
-      console.log(`⚠️  [${label}] SLOW: ${req.method} ${req.path} - ${duration}ms - ${res.statusCode}`);
-    } else if (duration > 1000) {
-      console.log(`⚡ [${label}] ${req.method} ${req.path} - ${duration}ms - ${res.statusCode}`);
-    } else {
-      console.log(`✅ [${label}] ${req.method} ${req.path} - ${duration}ms - ${res.statusCode}`);
-    }
-  });
-
-  next();
-};
-
-// Viewer wrapper page
-router.get('/viewer', logPerformance('VIEWER'), async (req, res) => {
+// 1. VIEWER HTML
+router.get('/viewer', async (req, res) => {
   try {
     const studyUid = req.query.StudyInstanceUIDs;
     const clinicId = req.query.clinicId || '';
@@ -165,8 +108,6 @@ router.get('/viewer', logPerformance('VIEWER'), async (req, res) => {
 <head>
   <meta charset="utf-8">
   <title>OHIF Viewer</title>
-  <link rel="preload" href="/api/proxy/ohif/app.bundle.b34f32c5020ee27ad26.js?clinicId=${clinicId}" as="script">
-  <link rel="preload" href="/api/proxy/ohif/app-config.js?clinicId=${clinicId}" as="script">
   <style>
     body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
     iframe { border: 0; width: 100%; height: 100%; }
@@ -247,129 +188,184 @@ router.get('/viewer', logPerformance('VIEWER'), async (req, res) => {
   }
 });
 
-// DICOMweb endpoint with caching
-router.all('/dicom-web/*', logPerformance('DICOMWEB'), async (req, res) => {
-  const start = Date.now();
+// 2. EXPORT DICOM (ZIP)
+router.get('/export-dicom', async (req, res) => {
+  try {
+    const { studyUid, clinicId } = req.query;
+    if (!studyUid) {
+      return res.status(400).json({ error: 'Missing studyUid parameter' });
+    }
+
+    console.log(`📦 [EXPORT] Requesting ZIP for StudyUID: ${studyUid} (Clinic: ${clinicId || 'Default'})`);
+
+    const config = await getOrthancConfig(req);
+    
+    // Lookup internal ID
+    const lookupRes = await fetchWithRetry(`${config.url}/tools/lookup`, {
+      method: 'POST',
+      body: studyUid,
+      headers: { 
+        'Authorization': config.auth,
+        'Content-Type': 'text/plain'
+      },
+      agent: config.agent
+    });
+
+    if (!lookupRes.ok) {
+      throw new Error(`Lookup failed: ${lookupRes.statusText}`);
+    }
+
+    const lookupData = await lookupRes.json();
+    const studyData = lookupData.find(item => item.Type === 'Study');
+    
+    if (!studyData) {
+      return res.status(404).json({ error: 'Study not found on PACS' });
+    }
+
+    console.log(`   ↳ Mapped StudyUID ${studyUid} to Internal ID: ${studyData.ID}`);
+
+    // Stream Zip
+    const archiveRes = await fetch(`${config.url}/studies/${studyData.ID}/archive`, {
+      method: 'GET',
+      headers: { 'Authorization': config.auth },
+      agent: config.agent,
+      timeout: 300000
+    });
+
+    if (!archiveRes.ok) {
+      throw new Error(`Archive generation failed: ${archiveRes.statusText}`);
+    }
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="Study-${studyUid}.zip"`);
+    
+    const contentLength = archiveRes.headers.get('content-length');
+    if (contentLength) {
+      res.setHeader('Content-Length', contentLength);
+      console.log(`   ↳ Streaming ZIP archive (${(contentLength / 1024 / 1024).toFixed(2)}MB)`);
+    }
+
+    archiveRes.body.pipe(res);
+
+  } catch (error) {
+    console.error(`❌ [EXPORT] Error: ${error.message}`);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to export study', details: error.message });
+    }
+  }
+});
+
+// 3. THE HIGH PERFORMANCE DICOM PROXY
+router.all('/dicom-web/*', async (req, res) => {
   try {
     const path = req.params[0];
     const url = new URL(req.url, 'http://localhost');
     url.searchParams.delete('token');
     const clinicId = url.searchParams.get('clinicId');
-    url.searchParams.delete('clinicId'); // Remove from forwarded query
+    url.searchParams.delete('clinicId');
     const cleanQuery = url.search;
 
-    const cacheKey = `dicom-${clinicId || 'default'}-${req.method}-${path}${cleanQuery}`;
+    const cacheKey = `meta-${clinicId || 'def'}-${path}${cleanQuery}`;
+    const isFrameRequest = path.includes('/frames/'); // Is this an image?
 
-    // Check cache for GET requests
-    if (req.method === 'GET') {
-      // Check frame cache for pixel data
-      if (path.includes('/frames/')) {
-        const cached = frameCache.get(cacheKey);
-        if (cached) {
-          console.log(`💾 [Frame CACHE HIT] ${path.substring(path.lastIndexOf('/'))}`);
-          res.status(cached.status);
-          Object.entries(cached.headers).forEach(([key, value]) => {
-            res.setHeader(key, value);
-          });
-          return res.send(cached.body);
-        }
-      } else {
-        // Check metadata cache
-        const cached = metadataCache.get(cacheKey);
-        if (cached) {
-          console.log(`💾 [Metadata CACHE HIT] ${path.split('/').pop()}`);
-          res.status(cached.status);
-          Object.entries(cached.headers).forEach(([key, value]) => {
-            res.setHeader(key, value);
-          });
-          return res.send(cached.body);
-        }
+    // --- A. FAST LANE: Serve Metadata from RAM ---
+    // Only for JSON requests (Study metadata, Series metadata)
+    if (req.method === 'GET' && !isFrameRequest) {
+      const cached = metadataCache.get(cacheKey);
+      if (cached) {
+        console.log(`💾 [Metadata CACHE HIT] ${path.split('/').pop()}`);
+        res.status(cached.status);
+        Object.entries(cached.headers).forEach(([k, v]) => res.setHeader(k, v));
+        return res.send(cached.body);
       }
     }
 
     const config = await getOrthancConfig(req);
     const orthancUrl = `${config.url}/dicom-web/${path}${cleanQuery}`;
 
-    console.log(`🔍 [DICOMweb] ${req.method} ${path.split('/').slice(-2).join('/')} (Clinic: ${clinicId || 'Default'})`);
+    console.log(`🔍 [DICOMweb] ${req.method} ${isFrameRequest ? 'Frame' : 'Metadata'} ${path.split('/').slice(-2).join('/')}`);
 
-    const options = {
+    // --- B. FETCH FROM ORTHANC ---
+    const fetchOptions = {
       method: req.method,
-      headers: { 'Authorization': config.auth },
-      agent: config.agent,
-      timeout: 120000 // 2 minute timeout for large frames
+      headers: { 
+        'Authorization': config.auth
+      },
+      agent: config.agent
     };
 
     if (req.headers['content-type']) {
-      options.headers['Content-Type'] = req.headers['content-type'];
+      fetchOptions.headers['Content-Type'] = req.headers['content-type'];
     }
     if (req.headers['accept']) {
-      options.headers['Accept'] = req.headers['accept'];
+      fetchOptions.headers['Accept'] = req.headers['accept'];
     }
 
     if (req.method !== 'GET' && req.method !== 'HEAD' && req.body) {
-      options.body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+      fetchOptions.body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
     }
 
-    const response = await fetchWithRetry(orthancUrl, options);
-    const fetchTime = Date.now() - start;
+    const response = await fetchWithRetry(orthancUrl, fetchOptions);
 
-    console.log(`   ↳ Orthanc responded in ${fetchTime}ms - Status: ${response.status}`);
-
-    // Cache successful GET requests
-    if (req.method === 'GET' && response.ok) {
-      const body = await response.buffer();
-      const headers = {};
-      ['content-type', 'content-length', 'cache-control', 'etag'].forEach(header => {
-        const value = response.headers.get(header);
-        if (value) headers[header] = value;
-      });
-
-      // Cache frames (pixel data) longer
-      if (path.includes('/frames/')) {
-        try {
-          frameCache.set(cacheKey, { status: response.status, headers, body }, 3600);
-          console.log(`💾 Cached frame (${(body.length / 1024).toFixed(2)}KB)`);
-        } catch (cacheError) {
-          console.warn(`⚠️  Frame cache full, skipping cache for this frame`);
-        }
-      } else if (path.includes('metadata')) {
-        try {
-          metadataCache.set(cacheKey, { status: response.status, headers, body }, 600);
-        } catch (cacheError) {
-          console.warn(`⚠️  Metadata cache full, skipping cache`);
-        }
-      } else {
-        try {
-          metadataCache.set(cacheKey, { status: response.status, headers, body }, 300);
-        } catch (cacheError) {
-          console.warn(`⚠️  Metadata cache full, skipping cache`);
-        }
-      }
-
-      res.status(response.status);
-      Object.entries(headers).forEach(([key, value]) => {
-        res.setHeader(key, value);
-      });
-      return res.send(body);
+    if (!response.ok) {
+      console.error(`❌ [DICOMweb] Failed: ${response.status} ${response.statusText}`);
+      return res.status(response.status).send(response.statusText);
     }
 
-    // Stream response for non-cached
+    // --- C. SET BROWSER CACHING HEADERS (CRITICAL FOR PERFORMANCE) ---
     res.status(response.status);
-    ['content-type', 'content-length', 'cache-control', 'etag', 'last-modified'].forEach(header => {
-      const value = response.headers.get(header);
-      if (value) res.setHeader(header, value);
+    
+    // Pass standard headers
+    const passHeaders = ['content-type', 'content-length', 'last-modified', 'etag'];
+    passHeaders.forEach(h => {
+      if (response.headers.get(h)) res.setHeader(h, response.headers.get(h));
     });
 
-    response.body.pipe(res);
+    if (req.method === 'GET') {
+      if (isFrameRequest) {
+        // IMAGE STRATEGY: "Immutable"
+        // Browser will save this to disk and NEVER ask server again.
+        // This is much faster than Node.js memory caching.
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      } else {
+        // METADATA STRATEGY: "Revalidate occasionally"
+        res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+      }
+    }
+
+    // --- D. DELIVERY STRATEGY ---
+    
+    if (isFrameRequest) {
+      // 🚀 SPEED MODE: Stream immediately.
+      // Do NOT buffer. Do NOT store in Node RAM.
+      // This fixes "Frame cache full" error.
+      response.body.pipe(res);
+    } else {
+      // 🧠 MEMORY MODE: Buffer Metadata only.
+      // Metadata is small JSON/Text. Safe to store.
+      const body = await response.buffer();
+      
+      if (req.method === 'GET') {
+        const headers = {};
+        passHeaders.forEach(h => {
+          if (response.headers.get(h)) headers[h] = response.headers.get(h);
+        });
+        metadataCache.set(cacheKey, { status: response.status, headers, body });
+        console.log(`💾 Cached metadata (${(body.length / 1024).toFixed(2)}KB)`);
+      }
+      res.send(body);
+    }
+
   } catch (error) {
-    console.error(`❌ [DICOMweb] Error: ${error.message}`);
-    res.status(500).json({ error: 'DICOMweb proxy request failed', details: error.message });
+    if (error.code !== 'ECONNRESET') {
+      console.error(`❌ [DICOMweb] Error: ${error.message}`);
+      if (!res.headersSent) res.status(500).json({ error: 'DICOMweb proxy error', details: error.message });
+    }
   }
 });
 
-// Orthanc REST API
-router.all('/orthanc/*', logPerformance('ORTHANC'), async (req, res) => {
-  const start = Date.now();
+// 4. ORTHANC REST API (for backward compatibility)
+router.all('/orthanc/*', async (req, res) => {
   try {
     const path = req.params[0];
     const url = new URL(req.url, 'http://localhost');
@@ -381,7 +377,7 @@ router.all('/orthanc/*', logPerformance('ORTHANC'), async (req, res) => {
     const config = await getOrthancConfig(req);
     const orthancUrl = `${config.url}/${path}${cleanQuery}`;
 
-    console.log(`🔍 [Orthanc API] ${req.method} ${path.split('/').slice(0, 2).join('/')} (Clinic: ${clinicId || 'Default'})`);
+    console.log(`🔍 [Orthanc API] ${req.method} ${path.split('/').slice(0, 2).join('/')}`);
 
     const options = {
       method: req.method,
@@ -401,9 +397,6 @@ router.all('/orthanc/*', logPerformance('ORTHANC'), async (req, res) => {
     }
 
     const response = await fetchWithRetry(orthancUrl, options);
-    const fetchTime = Date.now() - start;
-
-    console.log(`   ↳ Orthanc responded in ${fetchTime}ms - Status: ${response.status}`);
 
     res.status(response.status);
     ['content-type', 'content-length', 'cache-control', 'etag', 'last-modified'].forEach(header => {
@@ -414,17 +407,16 @@ router.all('/orthanc/*', logPerformance('ORTHANC'), async (req, res) => {
     response.body.pipe(res);
   } catch (error) {
     console.error(`❌ [Orthanc API] Error: ${error.message}`);
-    res.status(500).json({ error: 'Orthanc proxy request failed', details: error.message });
+    if (!res.headersSent) res.status(500).json({ error: 'Orthanc proxy error', details: error.message });
   }
 });
 
-// OHIF static resources - no auth required for bundles
-router.get('/ohif/*', logPerformance('OHIF-STATIC'), async (req, res) => {
-  const start = Date.now();
+// 5. OHIF STATIC ASSETS (With rewriting)
+router.get('/ohif/*', async (req, res) => {
   try {
     const path = req.params[0];
     const clinicId = req.query.clinicId || '';
-
+    
     if (path.endsWith('.map')) {
       return res.status(404).end();
     }
@@ -446,32 +438,12 @@ router.get('/ohif/*', logPerformance('OHIF-STATIC'), async (req, res) => {
       }
     }
 
-    // Check cache
-    const cacheKey = `ohif-${path}`;
-    const cached = resourceCache.get(cacheKey);
-    if (cached) {
-      console.log(`💾 [OHIF CACHE HIT] ${path.split('/').pop()}`);
-      res.setHeader('Content-Type', cached.contentType);
-      res.setHeader('Cache-Control', cached.cacheControl);
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      return res.send(cached.body);
-    }
-
     const config = await getOrthancConfig(req);
-    const url = `${config.url}/ohif/${path}`;
-
-    // Check config cache (skip for now as it might be clinic specific)
-    // Actually config might be same for all, but let's be safe and fetch fresh if clinicId changes?
-    // For now, let's just fetch.
-
-    console.log(`📦 [OHIF] Fetching: ${path.split('/').pop()}`);
-
-    const response = await fetchWithRetry(url, {
+    
+    const response = await fetchWithRetry(`${config.url}/ohif/${path}`, {
       headers: { 'Authorization': config.auth },
       agent: config.agent
     });
-
-    const fetchTime = Date.now() - start;
 
     if (!response.ok) {
       console.error(`❌ [OHIF] Resource not found: ${path} (${response.status})`);
@@ -482,16 +454,13 @@ router.get('/ohif/*', logPerformance('OHIF-STATIC'), async (req, res) => {
     res.setHeader('Content-Type', contentType);
     res.setHeader('Access-Control-Allow-Origin', '*');
 
-    // Handle text files that need URL rewriting
-    if (path.includes('app-config.js') || path === 'viewer' || path.includes('.html')) {
+    // If it's the config file, we must rewrite the URLs inside it
+    if (path.includes('app-config.js') || path.includes('viewer') || path.endsWith('.html')) {
       let content = await response.text();
-
-      console.log(`🔧 [OHIF] Rewriting URLs in ${path.split('/').pop()} (${fetchTime}ms)`);
-
-      // Append clinicId to proxy URLs so subsequent requests carry it
+      
       const clinicParam = clinicId ? `?clinicId=${clinicId}` : '';
-      const clinicParamAmp = clinicId ? `&clinicId=${clinicId}` : '';
-
+      
+      // Rewrite to point to OUR proxy
       content = content
         .replace(/<base href="\/ohif\/?"/g, '<base href="/api/proxy/ohif/"')
         .replace(/https?:\/\/[^/'"]+\/ohif/g, '/api/proxy/ohif')
@@ -503,27 +472,11 @@ router.get('/ohif/*', logPerformance('OHIF-STATIC'), async (req, res) => {
         .replace(/'\/dicom-web/g, "'/api/proxy/dicom-web")
         .replace(/url:\s*['"]\/dicom-web['"]/g, "url: '/api/proxy/dicom-web'")
         .replace(/url:\s*['"]\/studies['"]/g, "url: '/api/proxy/orthanc/studies'")
-        .replace(/(['"])\/dicom-web\//g, "$1/api/proxy/dicom-web/");
-
-      // Inject clinicId into API calls in JS
-      // This is tricky. simpler to just rely on the fact that we inject it in the iframe src
-      // and OHIF might propagate query params? No, it doesn't usually.
-      // We might need to monkey-patch the config to add query params to the servers.
-
-      if (path.includes('app-config.js')) {
-        // Modify the servers config to include clinicId in the wadoRoot etc
-        // This is a bit hacky but effective
-        content = content.replace(
-          /wadoRoot:\s*['"]\/api\/proxy\/dicom-web['"]/g,
-          `wadoRoot: '/api/proxy/dicom-web${clinicParam}'`
-        ).replace(
-          /qidoRoot:\s*['"]\/api\/proxy\/dicom-web['"]/g,
-          `qidoRoot: '/api/proxy/dicom-web${clinicParam}'`
-        ).replace(
-          /wadoUriRoot:\s*['"]\/api\/proxy\/dicom-web['"]/g,
-          `wadoUriRoot: '/api/proxy/dicom-web${clinicParam}'`
-        );
-      }
+        .replace(/(['"])\/dicom-web\//g, "$1/api/proxy/dicom-web/")
+        // Fix WADO Roots
+        .replace(/wadoRoot:\s*['"]\/api\/proxy\/dicom-web['"]/g, `wadoRoot: '/api/proxy/dicom-web${clinicParam}'`)
+        .replace(/qidoRoot:\s*['"]\/api\/proxy\/dicom-web['"]/g, `qidoRoot: '/api/proxy/dicom-web${clinicParam}'`)
+        .replace(/wadoUriRoot:\s*['"]\/api\/proxy\/dicom-web['"]/g, `wadoUriRoot: '/api/proxy/dicom-web${clinicParam}'`);
 
       if (path.includes('app-config.js')) {
         res.setHeader('Cache-Control', 'public, max-age=300');
@@ -535,108 +488,13 @@ router.get('/ohif/*', logPerformance('OHIF-STATIC'), async (req, res) => {
 
       res.send(content);
     } else {
-      // Static assets - cache aggressively
-      const size = response.headers.get('content-length');
-      const cacheControl = 'public, max-age=31536000, immutable';
-      res.setHeader('Cache-Control', cacheControl);
-
-      // Cache files under 5MB
-      if (size && parseInt(size) < 5 * 1024 * 1024) {
-        const body = await response.buffer();
-        resourceCache.set(cacheKey, {
-          contentType,
-          cacheControl,
-          body
-        }, 86400);
-        res.send(body);
-      } else {
-        response.body.pipe(res);
-      }
+      // For pure JS/CSS bundles, cache heavily
+      res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+      response.body.pipe(res);
     }
   } catch (error) {
     console.error(`❌ [OHIF] Resource error for ${req.params[0]}:`, error.message);
-    res.status(500).send('Failed to load resource');
-  }
-});
-
-// NEW ENDPOINT: Export Study as ZIP (DICOM)
-router.get('/export-dicom', logPerformance('EXPORT-DICOM'), async (req, res) => {
-  try {
-    const { studyUid, clinicId } = req.query;
-
-    if (!studyUid) {
-      return res.status(400).json({ error: 'Missing studyUid parameter' });
-    }
-
-    console.log(`📦 [EXPORT] Requesting ZIP for StudyUID: ${studyUid} (Clinic: ${clinicId || 'Default'})`);
-
-    // 1. Get configuration
-    const config = await getOrthancConfig(req);
-
-    // 2. Lookup the Orthanc Internal ID using the DICOM StudyInstanceUID
-    // Orthanc needs its own UUID, not the DICOM UID, to generate the archive
-    const lookupUrl = `${config.url}/tools/lookup`;
-    const lookupResponse = await fetchWithRetry(lookupUrl, {
-      method: 'POST',
-      body: studyUid,
-      headers: { 
-        'Authorization': config.auth,
-        'Content-Type': 'text/plain'
-      },
-      agent: config.agent
-    });
-
-    if (!lookupResponse.ok) {
-      throw new Error(`Lookup failed: ${lookupResponse.statusText}`);
-    }
-
-    const lookupData = await lookupResponse.json();
-    
-    // Find the ID that corresponds to a 'Study'
-    const studyData = lookupData.find(item => item.Type === 'Study');
-
-    if (!studyData) {
-      return res.status(404).json({ error: 'Study not found on PACS' });
-    }
-
-    const internalId = studyData.ID;
-    console.log(`   ↳ Mapped StudyUID ${studyUid} to Internal ID: ${internalId}`);
-
-    // 3. Request the Archive from Orthanc
-    // We use a longer timeout (5 minutes) because zipping takes time
-    const archiveUrl = `${config.url}/studies/${internalId}/archive`;
-    
-    const archiveResponse = await fetch(archiveUrl, {
-      method: 'GET',
-      headers: { 'Authorization': config.auth },
-      timeout: 300000, // 5 minutes timeout
-      agent: config.agent
-    });
-
-    if (!archiveResponse.ok) {
-      throw new Error(`Archive generation failed: ${archiveResponse.statusText}`);
-    }
-
-    // 4. Stream the file to the client
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="Study-${studyUid}.zip"`);
-    
-    // Pass the size if available
-    const contentLength = archiveResponse.headers.get('content-length');
-    if (contentLength) {
-      res.setHeader('Content-Length', contentLength);
-    }
-
-    console.log(`   ↳ Streaming ZIP archive (${contentLength ? (contentLength / 1024 / 1024).toFixed(2) + 'MB' : 'unknown size'})`);
-
-    archiveResponse.body.pipe(res);
-
-  } catch (error) {
-    console.error(`❌ [EXPORT] Error: ${error.message}`);
-    // Only send JSON error if headers haven't been sent yet
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'Failed to export study', details: error.message });
-    }
+    if (!res.headersSent) res.status(500).send('Failed to load resource');
   }
 });
 

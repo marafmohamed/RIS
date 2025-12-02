@@ -6,7 +6,16 @@ const { adminOnly } = require('../middleware/auth');
 // Get all clinics
 router.get('/', async (req, res) => {
     try {
-        const clinics = await Clinic.find()
+        let query = {};
+        
+        // If not ADMIN, only return clinics in their allowedClinics list
+        if (req.user && req.user.role !== 'ADMIN') {
+            // Ensure allowedClinics exists, otherwise empty array
+            const allowed = req.user.allowedClinics || [];
+            query = { _id: { $in: allowed } };
+        }
+
+        const clinics = await Clinic.find(query)
             .select('-orthancPassword')
             .sort({ isDefault: -1, name: 1 });
         res.json(clinics);

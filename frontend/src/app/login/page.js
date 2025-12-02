@@ -17,6 +17,8 @@ export default function LoginPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    e.stopPropagation();
+    
     setLoading(true);
     setError('');
 
@@ -26,7 +28,20 @@ export default function LoginPage() {
       router.push('/dashboard');
     } catch (error) {
       console.error('Login error:', error);
-      const errorMessage = error.response?.data?.error || 'Échec de la connexion. Vérifiez vos identifiants.';
+      
+      // Better error messages based on error type
+      let errorMessage = 'Une erreur est survenue. Veuillez réessayer.';
+      
+      if (error.response?.status === 401) {
+        errorMessage = 'Email ou mot de passe incorrect';
+      } else if (error.response?.status === 403) {
+        errorMessage = 'Votre compte est désactivé. Contactez l\'administrateur.';
+      } else if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      } else if (!navigator.onLine) {
+        errorMessage = 'Pas de connexion internet';
+      }
+      
       setError(errorMessage);
       toast.error(errorMessage);
     } finally {
@@ -49,15 +64,26 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <div className="mb-4 p-3 rounded-md bg-red-50 border border-red-200 text-red-600 text-sm flex items-center">
-              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="mb-4 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm flex items-start gap-3">
+              <svg className="w-5 h-5 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              {error}
+              <div className="flex-1">
+                <p className="font-medium">{error}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setError('')}
+                className="text-red-400 hover:text-red-600 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-6" noValidate>
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
                 Adresse Email
@@ -66,11 +92,16 @@ export default function LoginPage() {
                 id="email"
                 type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="input w-full"
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setError('');
+                }}
+                className={`input w-full transition-colors ${error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
                 placeholder="votre.email@exemple.com"
                 required
+                autoComplete="email"
                 autoFocus
+                disabled={loading}
               />
             </div>
 
@@ -83,15 +114,23 @@ export default function LoginPage() {
                   id="password"
                   type={showPassword ? 'text' : 'password'}
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="input w-full pr-10"
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setError('');
+                  }}
+                  className={`input w-full pr-10 transition-colors ${error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
                   placeholder="••••••••"
                   required
+                  autoComplete="current-password"
+                  disabled={loading}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
+                  disabled={loading}
+                  tabIndex={-1}
+                  aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
                 >
                   {showPassword ? (
                     <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -110,7 +149,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full btn btn-primary py-3 text-lg"
+              className="w-full btn btn-primary py-3 text-lg disabled:cursor-not-allowed disabled:opacity-70"
             >
               {loading ? (
                 <span className="flex items-center justify-center">

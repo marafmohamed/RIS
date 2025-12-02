@@ -75,6 +75,9 @@ export default function DashboardPage() {
       if (defaultClinic) {
         setFilters(prev => ({ ...prev, clinicId: defaultClinic._id }));
       }
+    } else if (clinics.length === 0) {
+      // User has no clinic access - clear clinicId
+      setFilters(prev => ({ ...prev, clinicId: '' }));
     }
   }, [clinics]);
 
@@ -98,10 +101,15 @@ export default function DashboardPage() {
   const fetchClinics = async () => {
     try {
       const response = await clinicsAPI.getAll();
-      setClinics(response.data);
+      setClinics(response.data || []);
     } catch (error) {
       console.error('Failed to fetch clinics:', error);
-      toast.error('Erreur lors du chargement des cliniques');
+      setClinics([]); // Ensure empty array on error
+      if (error.response?.status === 403) {
+        toast.error('Vous n\'avez accès à aucune clinique');
+      } else {
+        toast.error('Erreur lors du chargement des cliniques');
+      }
     }
   };
 
@@ -125,7 +133,14 @@ export default function DashboardPage() {
       setStudies(response.data);
     } catch (error) {
       console.error('Failed to fetch studies:', error);
-      toast.error('Échec du chargement des études');
+      if (error.response?.status === 403) {
+        toast.error('Accès refusé à cette clinique');
+        // Clear the invalid clinic selection
+        setFilters(prev => ({ ...prev, clinicId: '' }));
+        setClinics([]);
+      } else {
+        toast.error('Échec du chargement des études');
+      }
       setStudies([]);
     } finally {
       setLoading(false);
@@ -300,27 +315,29 @@ export default function DashboardPage() {
       <div className="flex h-[calc(100vh-64px)]">
         {/* Sidebar */}
         <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
-          <div className="p-4 border-b border-gray-100 bg-gray-50/50">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block flex items-center gap-1">
-              <Building2 size={14} /> Clinique Active
-            </label>
-            <div className="relative group">
-              <select
-                value={filters.clinicId}
-                onChange={(e) => setFilters({ ...filters, clinicId: e.target.value })}
-                className="w-full pl-3 pr-8 py-2.5 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-900 shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none cursor-pointer hover:border-blue-300 transition-colors"
-              >
-                {clinics.map((clinic) => (
-                  <option key={clinic._id} value={clinic._id}>
-                    {clinic.name}
-                  </option>
-                ))}
-              </select>
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
-                <ChevronRight size={16} className="rotate-90" />
+          {clinics.length > 0 && (
+            <div className="p-4 border-b border-gray-100 bg-gray-50/50">
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block flex items-center gap-1">
+                <Building2 size={14} /> Clinique Active
+              </label>
+              <div className="relative group">
+                <select
+                  value={filters.clinicId}
+                  onChange={(e) => setFilters({ ...filters, clinicId: e.target.value })}
+                  className="w-full pl-3 pr-8 py-2.5 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-900 shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none cursor-pointer hover:border-blue-300 transition-colors"
+                >
+                  {clinics.map((clinic) => (
+                    <option key={clinic._id} value={clinic._id}>
+                      {clinic.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                  <ChevronRight size={16} className="rotate-90" />
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           <div className="p-4 overflow-y-auto flex-1">
             <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Statut des rapports</h2>
@@ -425,6 +442,13 @@ export default function DashboardPage() {
             {loading ? (
               <div className="flex justify-center items-center h-full">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+              </div>
+            ) : clinics.length === 0 ? (
+              <div className="text-center py-12">
+                <Building2 className="mx-auto text-gray-400 mb-4" size={48} />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">Aucun accès aux cliniques</h3>
+                <p className="text-gray-500 mb-2">Vous n&apos;avez accès à aucune clinique.</p>
+                <p className="text-sm text-gray-400">Veuillez contacter votre administrateur pour obtenir les accès nécessaires.</p>
               </div>
             ) : !filters.clinicId ? (
               <div className="text-center py-12">

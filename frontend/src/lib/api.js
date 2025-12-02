@@ -28,7 +28,12 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    // Only redirect on 401 if we're not already on the login page
+    // and if there was a token (meaning user was authenticated before)
+    if (error.response?.status === 401 && 
+        typeof window !== 'undefined' && 
+        window.location.pathname !== '/login' &&
+        localStorage.getItem('token')) {
       // Clear token and redirect to login
       localStorage.removeItem('token');
       localStorage.removeItem('user');

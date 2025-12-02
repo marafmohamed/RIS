@@ -22,6 +22,11 @@ const userSchema = new mongoose.Schema({
     enum: ['ADMIN', 'RADIOLOGIST', 'VIEWER', 'REFERRING_PHYSICIAN'],
     default: 'RADIOLOGIST'
   },
+  // Array of Clinic IDs the user can access
+  allowedClinics: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Clinic'
+  }],
   isActive: {
     type: Boolean,
     default: true

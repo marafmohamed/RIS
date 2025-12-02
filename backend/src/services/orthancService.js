@@ -121,14 +121,17 @@ class OrthancService {
   }
 
   async searchStudiesByPatientName(patientName) {
+    // Use case-insensitive wildcard search
+    // DICOM standard uses * as wildcard, searches are typically case-insensitive
     return await this.findStudies({
       PatientName: `*${patientName}*`
     });
   }
 
   async searchStudiesByPatientID(patientId) {
+    // Use wildcard for partial matches
     return await this.findStudies({
-      PatientID: patientId
+      PatientID: `*${patientId}*`
     });
   }
 

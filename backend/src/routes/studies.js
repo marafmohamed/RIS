@@ -10,7 +10,15 @@ const router = express.Router();
 router.use(authMiddleware);
 
 // Helper to get Orthanc service instance
-async function getOrthancService(clinicId) {
+async function getOrthancService(clinicId, user) {
+  // Security Check: If user is not ADMIN, check if they have access to this clinic
+  if (user && user.role !== 'ADMIN' && clinicId) {
+    const allowedIds = (user.allowedClinics || []).map(id => id.toString());
+    if (!allowedIds.includes(clinicId)) {
+      throw new Error('ACCESS_DENIED');
+    }
+  }
+
   if (clinicId) {
     const clinic = await Clinic.findById(clinicId);
     if (clinic) {
@@ -33,7 +41,7 @@ router.get('/', async (req, res) => {
   try {
     const { patientName, patientId, startDate, endDate, clinicId, modality } = req.query;
 
-    const orthancService = await getOrthancService(clinicId);
+    const orthancService = await getOrthancService(clinicId, req.user);
     let orthancStudies = [];
 
     // 1. Search Orthanc based on query parameters
@@ -44,11 +52,9 @@ router.get('/', async (req, res) => {
     } else if (startDate || endDate) {
       orthancStudies = await orthancService.searchStudiesByDate(startDate, endDate);
     } else {
-      // Default: get studies from last 30 days
-      const today = new Date();
-      const thirtyDaysAgo = new Date(today.setDate(today.getDate() - 30));
-      const startDateStr = thirtyDaysAgo.toISOString().split('T')[0];
-      orthancStudies = await orthancService.searchStudiesByDate(startDateStr, null);
+      // Default: get all studies (no date restriction)
+      // Previous behavior limited to 30 days which could hide older studies
+      orthancStudies = await orthancService.findStudies({});
     }
 
     // 2. Parse Studies using the Service
@@ -143,6 +149,9 @@ router.get('/', async (req, res) => {
 
     res.json(studiesWithStatus);
   } catch (error) {
+    if (error.message === 'ACCESS_DENIED') {
+      return res.status(403).json({ error: 'You do not have access to this clinic' });
+    }
     console.error('Get studies error:', error);
     res.status(500).json({ error: 'Failed to fetch studies from PACS' });
   }
@@ -154,7 +163,7 @@ router.get('/:studyUid', async (req, res) => {
     const { studyUid } = req.params;
     const { clinicId } = req.query;
 
-    const orthancService = await getOrthancService(clinicId);
+    const orthancService = await getOrthancService(clinicId, req.user);
 
     // Find the study in Orthanc by StudyInstanceUID
     const searchResults = await orthancService.findStudies({
@@ -178,6 +187,9 @@ router.get('/:studyUid', async (req, res) => {
       report: report || null
     });
   } catch (error) {
+    if (error.message === 'ACCESS_DENIED') {
+      return res.status(403).json({ error: 'You do not have access to this clinic' });
+    }
     console.error('Get study details error:', error);
     res.status(500).json({ error: 'Failed to fetch study details' });
   }
@@ -187,7 +199,7 @@ router.get('/:studyUid', async (req, res) => {
 router.get('/test/connection', async (req, res) => {
   try {
     const { clinicId } = req.query;
-    const orthancService = await getOrthancService(clinicId);
+    const orthancService = await getOrthancService(clinicId, req.user);
 
     const systemInfo = await orthancService.getSystemInfo();
     res.json({
