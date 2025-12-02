@@ -559,6 +559,87 @@ router.get('/ohif/*', logPerformance('OHIF-STATIC'), async (req, res) => {
   }
 });
 
+// NEW ENDPOINT: Export Study as ZIP (DICOM)
+router.get('/export-dicom', logPerformance('EXPORT-DICOM'), async (req, res) => {
+  try {
+    const { studyUid, clinicId } = req.query;
+
+    if (!studyUid) {
+      return res.status(400).json({ error: 'Missing studyUid parameter' });
+    }
+
+    console.log(`📦 [EXPORT] Requesting ZIP for StudyUID: ${studyUid} (Clinic: ${clinicId || 'Default'})`);
+
+    // 1. Get configuration
+    const config = await getOrthancConfig(req);
+
+    // 2. Lookup the Orthanc Internal ID using the DICOM StudyInstanceUID
+    // Orthanc needs its own UUID, not the DICOM UID, to generate the archive
+    const lookupUrl = `${config.url}/tools/lookup`;
+    const lookupResponse = await fetchWithRetry(lookupUrl, {
+      method: 'POST',
+      body: studyUid,
+      headers: { 
+        'Authorization': config.auth,
+        'Content-Type': 'text/plain'
+      },
+      agent: config.agent
+    });
+
+    if (!lookupResponse.ok) {
+      throw new Error(`Lookup failed: ${lookupResponse.statusText}`);
+    }
+
+    const lookupData = await lookupResponse.json();
+    
+    // Find the ID that corresponds to a 'Study'
+    const studyData = lookupData.find(item => item.Type === 'Study');
+
+    if (!studyData) {
+      return res.status(404).json({ error: 'Study not found on PACS' });
+    }
+
+    const internalId = studyData.ID;
+    console.log(`   ↳ Mapped StudyUID ${studyUid} to Internal ID: ${internalId}`);
+
+    // 3. Request the Archive from Orthanc
+    // We use a longer timeout (5 minutes) because zipping takes time
+    const archiveUrl = `${config.url}/studies/${internalId}/archive`;
+    
+    const archiveResponse = await fetch(archiveUrl, {
+      method: 'GET',
+      headers: { 'Authorization': config.auth },
+      timeout: 300000, // 5 minutes timeout
+      agent: config.agent
+    });
+
+    if (!archiveResponse.ok) {
+      throw new Error(`Archive generation failed: ${archiveResponse.statusText}`);
+    }
+
+    // 4. Stream the file to the client
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="Study-${studyUid}.zip"`);
+    
+    // Pass the size if available
+    const contentLength = archiveResponse.headers.get('content-length');
+    if (contentLength) {
+      res.setHeader('Content-Length', contentLength);
+    }
+
+    console.log(`   ↳ Streaming ZIP archive (${contentLength ? (contentLength / 1024 / 1024).toFixed(2) + 'MB' : 'unknown size'})`);
+
+    archiveResponse.body.pipe(res);
+
+  } catch (error) {
+    console.error(`❌ [EXPORT] Error: ${error.message}`);
+    // Only send JSON error if headers haven't been sent yet
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to export study', details: error.message });
+    }
+  }
+});
+
 // Catch-all for debugging
 router.all('*', (req, res) => {
   console.error(`❌ [404] Route not found: ${req.method} ${req.path}`);

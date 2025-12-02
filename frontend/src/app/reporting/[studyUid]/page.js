@@ -13,7 +13,8 @@ import {
   ChevronDown, 
   ChevronUp, 
   Search, 
-  GripHorizontal 
+  GripHorizontal,
+  HardDrive 
 } from 'lucide-react';
 import ReportEditorV2 from '@/components/reporting/ReportEditorV2';
 import OHIFViewer from '@/components/reporting/OHIFViewer';
@@ -415,6 +416,36 @@ export default function ReportingPage({ params }) {
     }
   };
 
+  const handleExportDICOM = async () => {
+    try {
+      // Create the URL for the download
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+      
+      // Get the token for authentication
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+      if (!token) {
+        toast.error('Vous devez être connecté pour télécharger');
+        return;
+      }
+
+      // Construct URL with query parameters
+      let downloadUrl = `${apiUrl}/proxy/export-dicom?studyUid=${studyUid}&token=${token}`;
+      if (clinicId) {
+        downloadUrl += `&clinicId=${clinicId}`;
+      }
+
+      // Trigger download by opening in a new (hidden) window or changing location
+      // Using window.open allows the user to stay on the page while the download starts
+      window.open(downloadUrl, '_blank');
+      
+      toast.success('Le téléchargement de l\'étude DICOM a commencé...');
+      setShowExportMenu(false);
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error('Erreur lors du lancement du téléchargement');
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-50">
@@ -488,6 +519,15 @@ export default function ReportingPage({ params }) {
                 <X size={16} />
               </button>
             )}
+
+            {/* Export DICOM Button */}
+            <button
+              onClick={handleExportDICOM}
+              className="p-1.5 rounded hover:bg-blue-600 transition-colors bg-blue-700"
+              title="Télécharger l'étude DICOM (ZIP)"
+            >
+              <HardDrive size={16} />
+            </button>
           </div>
         </div>
 
