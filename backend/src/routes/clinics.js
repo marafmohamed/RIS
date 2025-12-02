@@ -57,16 +57,31 @@ router.post('/', adminOnly, async (req, res) => {
 // Update clinic (admin only)
 router.put('/:id', adminOnly, async (req, res) => {
     try {
-        const clinic = await Clinic.findByIdAndUpdate(
-            req.params.id,
-            { ...req.body, updatedAt: Date.now() },
-            { new: true, runValidators: true }
-        ).select('-orthancPassword');
+        // Use findById + save to trigger pre-save hooks (for password encryption)
+        const clinic = await Clinic.findById(req.params.id);
 
         if (!clinic) {
             return res.status(404).json({ error: 'Clinic not found' });
         }
-        res.json(clinic);
+
+        // If password is not provided or is empty, remove it from update data
+        // to prevent overwriting the existing encrypted password
+        const updateData = { ...req.body };
+        if (!updateData.orthancPassword || updateData.orthancPassword.trim() === '') {
+            delete updateData.orthancPassword;
+        }
+
+        // Update fields (excluding password if not provided)
+        Object.assign(clinic, updateData);
+        clinic.updatedAt = Date.now();
+
+        // Save (this triggers the pre-save hook for encryption)
+        await clinic.save();
+
+        // Return clinic without password
+        const clinicObj = clinic.toObject();
+        delete clinicObj.orthancPassword;
+        res.json(clinicObj);
     } catch (error) {
         console.error('Update clinic error:', error);
         res.status(500).json({ error: 'Failed to update clinic' });

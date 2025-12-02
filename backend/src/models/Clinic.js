@@ -59,12 +59,15 @@ const clinicSchema = new mongoose.Schema({
 });
 
 // Encrypt password before saving
-clinicSchema.pre('save', function (next) {
+clinicSchema.pre('save', async function (next) {
     if (this.isModified('orthancPassword') && this.orthancPassword) {
         // Only encrypt if it's not already encrypted (check for the ':' separator used in encryption)
         if (!this.orthancPassword.includes(':')) {
             console.log('Encrypting password for clinic:', this.name);
             this.orthancPassword = encrypt(this.orthancPassword);
+            if (!this.orthancPassword) {
+                return next(new Error('Password encryption failed'));
+            }
         } else {
             console.log('Password already encrypted for clinic:', this.name);
         }
