@@ -48,3 +48,16 @@ tmp/
 # Database
 *.sqlite
 *.db
+
+# Docker specific
+mongodb_data/
+nginx_logs/
+nginx/ssl/*.pem
+nginx/ssl/*.key
+nginx/ssl/*.crt
+backend/logs/
+
+# Backups
+backups/
+*.backup
+*.bak

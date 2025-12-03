@@ -15,23 +15,45 @@ const clinicRoutes = require('./routes/clinics');
 
 const app = express();
 
+// CRITICAL: Trust proxy for Docker/Nginx setup
+// This allows Express to read X-Forwarded-* headers from Nginx
+app.set('trust proxy', true);
+
 // Middleware
 
 // CORS Configuration - Allow multiple origins
+const allowedOrigins = process.env.FRONTEND_URL 
+  ? process.env.FRONTEND_URL.split(',').map(url => url.trim())
+  : [
+      "http://localhost:3000",
+      "https://ris-frontend-mu.vercel.app"
+    ];
 
 const corsOptions = {
-  // origin: process.env.FRONT_URL,
-  origin: [
-    "http://localhost:3000",
-    "https://ris-frontend-mu.vercel.app"
-  ],
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1 || allowedOrigins.includes('*')) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
 };
 
 app.use(cors(corsOptions));
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Request logging middleware (before routes)
+app.use((req, res, next) => {
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] ${req.method} ${req.originalUrl}`);
+  next();
+});
 
 // Database Connection
 mongoose.connect(process.env.MONGODB_URI, {
@@ -40,16 +62,34 @@ mongoose.connect(process.env.MONGODB_URI, {
 })
   .then(async () => {
     console.log('✅ Connected to MongoDB');
+    console.log(`📊 Database: ${process.env.MONGODB_URI.split('@')[1]}`);
+    
     await seedDefaultAdmin();
     await require('./utils/initializeDefaultClinic')();
+    
     const PORT = process.env.PORT || 5000;
+    const isVercel = process.env.VERCEL === '1';
 
-    // Only listen if we are running locally (not on Vercel)
-    if (process.env.NODE_ENV !== 'production') {
-      app.listen(PORT, () => {
+    // Start server (skip on Vercel serverless)
+    if (!isVercel) {
+      app.listen(PORT, '0.0.0.0', () => {
+        console.log('='.repeat(60));
         console.log(`🚀 RIS Backend server running on port ${PORT}`);
-        console.log(`📍 Environment: ${process.env.NODE_ENV}`);
-        console.log(`🔗 Frontend URL: ${process.env.FRONTEND_URL}`);
+        console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
+        console.log(`🔗 Allowed Origins: ${allowedOrigins.join(', ')}`);
+        console.log(`🏥 Orthanc URL: ${process.env.ORTHANC_URL || 'Not configured'}`);
+        console.log(`⏰ Server started at: ${new Date().toISOString()}`);
+        console.log('='.repeat(60));
+        console.log('📋 Registered Routes:');
+        console.log('   ✅ /api/auth');
+        console.log('   ✅ /api/users');
+        console.log('   ✅ /api/studies');
+        console.log('   ✅ /api/reports');
+        console.log('   ✅ /api/proxy (OHIF & DICOMweb)');
+        console.log('   ✅ /api/settings');
+        console.log('   ✅ /api/templates');
+        console.log('   ✅ /api/clinics');
+        console.log('='.repeat(60));
       });
     }
   })
@@ -80,17 +120,7 @@ async function seedDefaultAdmin() {
   }
 }
 
-// Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/studies', studyRoutes);
-app.use('/api/reports', reportRoutes);
-app.use('/api/proxy', proxyRoutes);
-app.use('/api/settings', settingsRoutes);
-app.use('/api/templates', templateRoutes);
-app.use('/api/clinics', clinicRoutes);
-
-// Health check
+// Health check (before routes)
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -102,21 +132,36 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Routes - CRITICAL: Proxy routes must be registered FIRST
+app.use('/api/proxy', proxyRoutes);
+console.log('✅ Proxy routes registered at /api/proxy');
+
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/studies', studyRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/settings', settingsRoutes);
+app.use('/api/templates', templateRoutes);
+app.use('/api/clinics', clinicRoutes);
+
 // 404 handler
 app.use((req, res) => {
-  res.status(404).json({ error: 'Route not found' });
+  console.error(`❌ 404 - Route not found: ${req.method} ${req.originalUrl}`);
+  res.status(404).json({ 
+    error: 'Route not found',
+    path: req.originalUrl,
+    method: req.method
+  });
 });
 
 // Error handler
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  console.error('❌ Error:', err.stack);
   res.status(err.status || 500).json({
     error: err.message || 'Internal server error',
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
   });
 });
-
-// Start server
 
 // Export the app for Vercel Serverless
 module.exports = app;
