@@ -102,7 +102,7 @@ networks:
   # Connect to Nginx Proxy Manager network
   npm-network:
     external: true
-    name: npm_default  # Adjust this to match your NPM network name
+    name: nginx-proxy1_default  # Adjust this to match your NPM network name
 
 volumes:
   mongodb_data:

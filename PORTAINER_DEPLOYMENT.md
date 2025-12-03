@@ -124,7 +124,7 @@ Common network names:
 
 ### **STEP 4: Deploy with Portainer**
 
-#### Method A: Using Portainer Web UI (Recommended)
+#### Method A: Using Portainer with Git Repository (RECOMMENDED)
 
 ##### 4.1 Login to Portainer
 Open your browser and go to `http://your-vps-ip:9000`
@@ -134,9 +134,13 @@ Open your browser and go to `http://your-vps-ip:9000`
 2. Click **"+ Add stack"** button
 3. Name it: `RIS`
 
-##### 4.3 Upload compose file
-1. Choose **"Upload"** option
-2. Upload `docker-compose.portainer.yml`
+##### 4.3 Configure Repository
+1. Choose **"Repository"** option (NOT Upload or Web Editor)
+2. **Repository URL**: Enter your Git repository URL
+   - Example: `https://github.com/yourusername/RIS.git`
+3. **Repository reference**: `refs/heads/main` (or your branch name)
+4. **Compose path**: `docker-compose.portainer.yml`
+5. **Authentication**: Add credentials if your repo is private
 
 ##### 4.4 Add Environment Variables
 Click **"+ Add environment variable"** and add each variable from your `.env` file:
@@ -167,12 +171,44 @@ Click **"+ Add environment variable"** and add each variable from your `.env` fi
 2. View **"Logs"** to see build progress
 3. Wait until all containers show as **"running"**
 
-#### Method B: Using Command Line
+#### Method B: Build Images First, Then Deploy (Alternative)
+
+If Git repository method doesn't work, build images on VPS first:
 
 ```bash
+# SSH into your VPS
+ssh root@your-vps-ip
+
+# Navigate to project
 cd /opt/RIS
+
+# Build images manually
+docker-compose -f docker-compose.portainer.yml build
+
+# Then deploy in Portainer using Web Editor
+# (The images will already exist)
+```
+
+Then in Portainer:
+1. Use **"Web editor"** option
+2. Paste the contents of `docker-compose.portainer.yml`
+3. Add environment variables
+4. Deploy (it will use the pre-built images)
+
+#### Method C: Using Command Line (Simplest)
+
+```bash
+# SSH into your VPS
+ssh root@your-vps-ip
+
+# Navigate to project
+cd /opt/RIS
+
+# Deploy directly
 docker-compose -f docker-compose.portainer.yml up -d --build
 ```
+
+This deploys without Portainer UI but you can still manage it in Portainer afterwards.
 
 ---
 
@@ -326,6 +362,36 @@ ping ris.yourdomain.com
 ---
 
 ## 🛠️ Troubleshooting
+
+### "path './backend' not found" Error in Portainer
+
+This happens when using **Upload** or **Web Editor** method because Portainer can't access your build context.
+
+**Solutions:**
+
+**Option 1: Use Git Repository method (BEST)**
+1. Push your code to GitHub/GitLab
+2. In Portainer, use **"Repository"** option instead of Upload
+3. Enter your Git URL and deploy
+
+**Option 2: Build on VPS first**
+```bash
+# SSH to VPS
+cd /opt/RIS
+
+# Build images
+docker-compose -f docker-compose.portainer.yml build
+
+# Then use Portainer Web Editor to deploy
+# (Images already exist, no build needed)
+```
+
+**Option 3: Use Command Line**
+```bash
+cd /opt/RIS
+docker-compose -f docker-compose.portainer.yml up -d --build
+```
+Then manage via Portainer UI.
 
 ### Container won't start
 ```bash
