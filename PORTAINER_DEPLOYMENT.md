@@ -68,20 +68,22 @@ MONGO_DATABASE=ris_db
 
 # Backend Configuration
 JWT_SECRET=YourVeryLongRandomSecretKeyMinimum64CharactersForMaximumSecurity!@#$
-FRONTEND_URL=https://ris.yourdomain.com
+FRONTEND_URL=https://rapport.58wilaya.com
 ORTHANC_URL=http://orthanc-server:8042
 ORTHANC_USERNAME=orthanc
 ORTHANC_PASSWORD=orthanc
 
 # Frontend Configuration
-NEXT_PUBLIC_API_URL=https://ris.yourdomain.com/api
+NEXT_PUBLIC_API_URL=https://rapport.58wilaya.com/api
 NEXT_PUBLIC_ORTHANC_URL=http://orthanc-server:8042
 ```
 
 **Important Tips:**
-- Replace `ris.yourdomain.com` with your actual domain
+- Use your actual domain: `rapport.58wilaya.com`
 - Generate a strong JWT_SECRET: `openssl rand -base64 64`
 - Generate a strong MongoDB password: `openssl rand -base64 32`
+- **FRONTEND_URL**: Full domain URL (https://rapport.58wilaya.com)
+- **NEXT_PUBLIC_API_URL**: Backend API endpoint (https://rapport.58wilaya.com/api)
 
 #### 2.3 Save and exit
 Press `Ctrl+X`, then `Y`, then `Enter`
@@ -251,62 +253,60 @@ Now set up the reverse proxy to make your application accessible via domain.
 #### 6.1 Login to Nginx Proxy Manager
 Open `http://your-vps-ip:81` in your browser
 
-#### 6.2 Add Proxy Host for Frontend
+#### 6.2 Add Proxy Host (Frontend + Backend Combined)
+
+⚠️ **IMPORTANT**: You only need **ONE** proxy host for both frontend and backend API.
 
 1. Click **"Proxy Hosts"** → **"Add Proxy Host"**
 
 **Details Tab:**
-- **Domain Names**: `ris.yourdomain.com`
+- **Domain Names**: `rapport.58wilaya.com` (your domain)
 - **Scheme**: `http`
-- **Forward Hostname/IP**: `ris-frontend` (container name)
+- **Forward Hostname/IP**: `ris-frontend`
 - **Forward Port**: `3000`
 - ✅ **Cache Assets**
 - ✅ **Block Common Exploits**
 - ✅ **Websockets Support**
 
-**SSL Tab:**
-- ✅ **SSL Certificate**: Request New SSL Certificate (Let's Encrypt)
-- ✅ **Force SSL**
-- ✅ **HTTP/2 Support**
-- ✅ **HSTS Enabled**
-- Enter your email address
-- ✅ Agree to Let's Encrypt Terms of Service
-- Click **"Save"**
+**Custom Locations Tab:**
+Click **"Add location"** to add backend API routing:
 
-#### 6.3 Add Proxy Host for Backend API
-
-1. Click **"Add Proxy Host"** again
-
-**Details Tab:**
-- **Domain Names**: `ris.yourdomain.com/api`
+**Location 1 - Backend API:**
+- **Define location**: `/api`
 - **Scheme**: `http`
 - **Forward Hostname/IP**: `ris-backend`
 - **Forward Port**: `5000`
-- ✅ **Block Common Exploits**
-- ✅ **Websockets Support**
 
-**Custom Locations Tab:**
-1. Click **"Add location"**
-   - **Define location**: `/api`
-   - **Scheme**: `http`
-   - **Forward Hostname/IP**: `ris-backend`
-   - **Forward Port**: `5000`
-
-**Advanced Tab:**
-Add this custom configuration:
+**Advanced Configuration:**
 ```nginx
-location /api {
-    rewrite ^/api/(.*) /$1 break;
-    proxy_pass http://ris-backend:5000;
+# Rewrite /api/* to /* for backend
+location /api/ {
+    proxy_pass http://ris-backend:5000/;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
 }
+
+# Health check endpoint
+location /health {
+    proxy_pass http://ris-backend:5000/health;
+    proxy_set_header Host $host;
+}
 ```
 
 **SSL Tab:**
-- Select the same SSL certificate created in step 6.2
+- **First time setup**: Leave empty, click **"Save"**
+- **After confirming HTTP works**: Edit proxy host again, then:
+  - ✅ **SSL Certificate**: Request New SSL Certificate (Let's Encrypt)
+  - Enter your email address
+  - ✅ Agree to Let's Encrypt Terms of Service
+  - **DO NOT check Force SSL yet**
+  - Click **"Save"** and wait 1-2 minutes
+- **After SSL works**: Edit again and enable:
+  - ✅ **Force SSL**
+  - ✅ **HTTP/2 Support**
+  - ✅ **HSTS Enabled**
 
 Click **"Save"**
 
@@ -414,11 +414,128 @@ Go to Containers → Click on container → View logs
    sudo ufw allow 443/tcp
    ```
 
-### SSL Certificate not working
-1. Make sure ports 80 and 443 are open
-2. DNS must be pointing to your VPS IP
-3. Try regenerating certificate in NPM
-4. Check NPM logs for errors
+### SSL Certificate not working / not being created
+
+**Common Causes:**
+
+1. **DNS not propagated yet**
+   ```bash
+   # Check if domain points to your VPS
+   nslookup ris.yourdomain.com
+   # Should return your VPS IP
+   ```
+   Wait 5-30 minutes after adding DNS record
+
+2. **Ports 80/443 blocked**
+   ```bash
+   # Check firewall
+   sudo ufw status
+   
+   # Allow if needed
+   sudo ufw allow 80/tcp
+   sudo ufw allow 443/tcp
+   
+   # Check if ports are listening
+   sudo netstat -tulpn | grep :80
+   sudo netstat -tulpn | grep :443
+   ```
+
+3. **Domain not reachable from internet**
+   - Check your router/VPS firewall
+   - Ensure ports 80 and 443 are forwarded to your VPS
+   - Test: `curl -I http://ris.yourdomain.com`
+
+4. **Let's Encrypt rate limit**
+   - 5 failures per hour limit
+   - 50 certificates per domain per week
+   - Wait 1 hour and try again
+
+5. **NPM can't validate domain**
+   - Domain MUST be accessible via HTTP first (port 80)
+   - Let's Encrypt validates via HTTP challenge
+   - Don't enable "Force SSL" until AFTER certificate is created
+
+**Step-by-Step SSL Setup:**
+
+**Step 1: Verify Prerequisites**
+```bash
+# On VPS - check your actual IP
+curl -4 ifconfig.me
+# OR
+ip addr show
+
+# Check DNS resolution
+nslookup ris.yourdomain.com
+# Should return YOUR VPS IP (from above)
+
+# Check if domain is reachable
+curl -I http://ris.yourdomain.com
+```
+
+**Step 2: Create Proxy Host WITHOUT SSL first**
+1. In NPM, create proxy host:
+   - Domain: `ris.yourdomain.com`
+   - Forward to: `ris-frontend:3000`
+   - **SSL Tab**: Leave empty for now
+   - Save
+
+2. Test: Open `http://ris.yourdomain.com` in browser
+   - Should show your app (even with browser warning)
+
+**Step 3: Add SSL Certificate**
+1. Edit the proxy host
+2. Go to **SSL Tab**
+3. SSL Certificate: **Request New SSL Certificate**
+4. Enter email address
+5. ✅ Agree to Terms of Service
+6. **DO NOT** check Force SSL yet
+7. Save
+
+8. Wait 30-60 seconds for certificate generation
+
+**Step 4: Enable Force SSL**
+1. Edit proxy host again
+2. SSL Tab: ✅ **Force SSL**
+3. ✅ **HTTP/2 Support**
+4. ✅ **HSTS Enabled**
+5. Save
+
+**Troubleshooting Certificate Creation:**
+
+**Check NPM Logs:**
+```bash
+# Find NPM container name
+docker ps | grep nginx-proxy
+
+# View logs
+docker logs -f <npm-container-name>
+```
+
+**Common Error Messages:**
+
+- **"DNS problem: NXDOMAIN"**: Domain doesn't exist or DNS not propagated
+- **"Connection refused"**: Port 80 not accessible
+- **"Too many requests"**: Rate limited, wait 1 hour
+- **"CAA record prevents issuance"**: Check DNS CAA records
+
+**Manual Certificate Creation (if NPM fails):**
+```bash
+# On VPS
+sudo apt install certbot
+
+# Stop NPM temporarily
+docker stop <npm-container-name>
+
+# Generate certificate
+sudo certbot certonly --standalone -d ris.yourdomain.com
+
+# Start NPM
+docker start <npm-container-name>
+
+# In NPM, use "Custom" certificate
+# Certificate: /etc/letsencrypt/live/ris.yourdomain.com/fullchain.pem
+# Private Key: /etc/letsencrypt/live/ris.yourdomain.com/privkey.pem
+```
 
 ### Backend can't connect to MongoDB
 1. Check MongoDB logs: `docker logs ris-mongodb`
