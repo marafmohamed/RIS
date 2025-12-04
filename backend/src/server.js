@@ -136,13 +136,13 @@ app.get('/health', (req, res) => {
 app.use('/api/proxy', proxyRoutes);
 console.log('✅ Proxy routes registered at /api/proxy');
 
-app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/studies', studyRoutes);
-app.use('/api/reports', reportRoutes);
-app.use('/api/settings', settingsRoutes);
-app.use('/api/templates', templateRoutes);
-app.use('/api/clinics', clinicRoutes);
+app.use('/auth', authRoutes);
+app.use('/users', userRoutes);
+app.use('/studies', studyRoutes);
+app.use('/reports', reportRoutes);
+app.use('/settings', settingsRoutes);
+app.use('/templates', templateRoutes);
+app.use('/clinics', clinicRoutes);
 
 // 404 handler
 app.use((req, res) => {
