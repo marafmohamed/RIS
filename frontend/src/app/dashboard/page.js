@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import { studiesAPI, clinicsAPI, reportsAPI, usersAPI } from '@/lib/api';
@@ -9,9 +9,9 @@ import {
   Search, Filter, Download, UserPlus,
   FileCheck, FileClock, FileX, Inbox,
   ChevronRight, ChevronLeft, Building2, Activity, Calendar,
-  FileText, Loader2
+  FileText, Loader2, ArrowUpDown, ArrowUp, ArrowDown
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, subDays } from 'date-fns';
 import { useAuth } from '@/lib/AuthContext';
 import { generatePDF } from '@/utils/pdfExport';
 import { generateWordDocument } from '@/utils/wordExport';
@@ -30,6 +30,7 @@ export default function DashboardPage() {
   const [isNavigating, setIsNavigating] = useState(false);
   const [activeFilter, setActiveFilter] = useState('all');
   const [showAssignModal, setShowAssignModal] = useState(false);
+  const [timePeriod, setTimePeriod] = useState('today');
 
   // Selection State
   const [selectedStudy, setSelectedStudy] = useState(null);
@@ -45,22 +46,34 @@ export default function DashboardPage() {
     modality: ''
   });
 
+  // Sorting and Column Filters
+  const [sortConfig, setSortConfig] = useState({ key: 'studyDate', direction: 'desc' });
+  const [columnFilters, setColumnFilters] = useState({
+    patientName: '',
+    patientId: '',
+    modality: '',
+    studyDescription: ''
+  });
+
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
+  const [pageInput, setPageInput] = useState('');
 
-  // Standard DICOM Modalities
-  const modalities = [
-    { code: 'CT', label: 'Scanner (CT)' },
-    { code: 'MR', label: 'IRM (MR)' },
-    { code: 'US', label: 'Échographie (US)' },
-    { code: 'CR', label: 'Radio CR' },
-    { code: 'DX', label: 'Radio DX' },
-    { code: 'MG', label: 'Mammographie' },
-    { code: 'XA', label: 'Angiographie' },
-    { code: 'NM', label: 'Médecine Nucléaire' },
-    { code: 'OT', label: 'Autre' },
-  ];
+  // Extract unique modalities from all studies
+  const modalities = useMemo(() => {
+    const modalitySet = new Set();
+    studies.forEach(study => {
+      if (study.modality) {
+        // Handle both single modality and multiple modalities separated by backslash
+        const mods = study.modality.split('\\');
+        mods.forEach(mod => {
+          if (mod.trim()) modalitySet.add(mod.trim());
+        });
+      }
+    });
+    return Array.from(modalitySet).map(mod => ({ code: mod, label: mod }));
+  }, [studies]);
 
   useEffect(() => {
     fetchClinics();
@@ -85,7 +98,7 @@ export default function DashboardPage() {
     if (filters.clinicId) {
       fetchStudies();
     }
-  }, [filters.clinicId, activeFilter, filters.modality]);
+  }, [filters.clinicId, timePeriod]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -97,6 +110,20 @@ export default function DashboardPage() {
       setActiveFilter('final');
     }
   }, [user]);
+
+  const handlePeriodChange = (period) => {
+    setTimePeriod(period);
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    
+    if (period === 'today') {
+      setFilters(prev => ({ ...prev, startDate: todayStr, endDate: todayStr, patientName: '', patientId: '' }));
+    } else if (period === 'week') {
+      const weekAgo = format(subDays(new Date(), 7), 'yyyy-MM-dd');
+      setFilters(prev => ({ ...prev, startDate: weekAgo, endDate: todayStr, patientName: '', patientId: '' }));
+    } else if (period === 'all') {
+      setFilters(prev => ({ ...prev, startDate: '', endDate: '', patientName: '', patientId: '' }));
+    }
+  };
 
   const fetchClinics = async () => {
     try {
@@ -128,14 +155,35 @@ export default function DashboardPage() {
 
     setLoading(true);
     try {
+      const isSearch = filters.patientName || filters.patientId;
       const activeFilters = { ...filters, ...searchFilters };
-      const response = await studiesAPI.getAll(activeFilters);
+      
+      const params = {
+        clinicId: activeFilters.clinicId,
+        modality: activeFilters.modality,
+        patientName: activeFilters.patientName,
+        patientId: activeFilters.patientId,
+      };
+
+      if (!isSearch) {
+         if (timePeriod === 'today' || timePeriod === 'week' || timePeriod === 'all') {
+            params.quickFilter = timePeriod;
+         } else {
+            params.startDate = activeFilters.startDate;
+            params.endDate = activeFilters.endDate;
+         }
+      } else {
+         params.startDate = activeFilters.startDate;
+         params.endDate = activeFilters.endDate;
+      }
+
+      const response = await studiesAPI.getAll(params);
       setStudies(response.data);
+      setCurrentPage(1);
     } catch (error) {
       console.error('Failed to fetch studies:', error);
       if (error.response?.status === 403) {
         toast.error('Accès refusé à cette clinique');
-        // Clear the invalid clinic selection
         setFilters(prev => ({ ...prev, clinicId: '' }));
         setClinics([]);
       } else {
@@ -245,7 +293,47 @@ export default function DashboardPage() {
     if (filters.modality) {
       result = result.filter(s => s.modality && s.modality.includes(filters.modality));
     }
+
+    // Column Search Filters
+    if (columnFilters.patientName) {
+      result = result.filter(s => s.patientName.toLowerCase().includes(columnFilters.patientName.toLowerCase()));
+    }
+    if (columnFilters.patientId) {
+      result = result.filter(s => s.patientId.toLowerCase().includes(columnFilters.patientId.toLowerCase()));
+    }
+    if (columnFilters.modality) {
+      result = result.filter(s => s.modality.toLowerCase().includes(columnFilters.modality.toLowerCase()));
+    }
+    if (columnFilters.studyDescription) {
+      result = result.filter(s => (s.studyDescription || '').toLowerCase().includes(columnFilters.studyDescription.toLowerCase()));
+    }
+
+    // Sorting
+    if (sortConfig.key) {
+      result.sort((a, b) => {
+        const aValue = a[sortConfig.key] || '';
+        const bValue = b[sortConfig.key] || '';
+        if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
     return result;
+  };
+
+  const handleSort = (key) => {
+    setSortConfig(current => ({
+      key,
+      direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc'
+    }));
+  };
+
+  const getSortIcon = (key) => {
+    if (sortConfig.key !== key) return <ArrowUpDown size={14} className="text-gray-400 ml-1" />;
+    return sortConfig.direction === 'asc' 
+      ? <ArrowUp size={14} className="text-blue-600 ml-1" /> 
+      : <ArrowDown size={14} className="text-blue-600 ml-1" />;
   };
 
   const filteredStudies = getFilteredStudies();
@@ -317,7 +405,7 @@ export default function DashboardPage() {
         <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
           {clinics.length > 0 && (
             <div className="p-4 border-b border-gray-100 bg-gray-50/50">
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block flex items-center gap-1">
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1">
                 <Building2 size={14} /> Clinique Active
               </label>
               <div className="relative group">
@@ -372,7 +460,36 @@ export default function DashboardPage() {
         {/* Main Content */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           {/* Filters Bar */}
-          <div className="bg-white border-b border-gray-200 p-4 shrink-0 shadow-sm z-20">
+          <div className="bg-white border-b border-gray-200 p-4 shrink-0 shadow-sm z-20 space-y-3">
+            {/* Time Period Buttons */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handlePeriodChange('today')}
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all ${timePeriod === 'today' ? 'bg-blue-600 text-white shadow-sm' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+              >
+                Aujourd&apos;hui
+              </button>
+              <button
+                onClick={() => handlePeriodChange('week')}
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all ${timePeriod === 'week' ? 'bg-blue-600 text-white shadow-sm' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+              >
+                7 Derniers Jours
+              </button>
+              <button
+                onClick={() => handlePeriodChange('custom')}
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all ${timePeriod === 'custom' ? 'bg-blue-600 text-white shadow-sm' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+              >
+                Personnalisé
+              </button>
+              <button
+                onClick={() => handlePeriodChange('all')}
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all ${timePeriod === 'all' ? 'bg-blue-600 text-white shadow-sm' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+              >
+                Toutes les Études
+              </button>
+            </div>
+
+            {/* Search Form */}
             <form onSubmit={handleSearch} className="flex flex-wrap gap-3 items-center">
               <div className="flex-1 min-w-[200px] relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
@@ -406,27 +523,29 @@ export default function DashboardPage() {
                   ))}
                 </select>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="relative w-36">
-                  <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
-                  <input
-                    type="date"
-                    value={filters.startDate}
-                    onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-                    className="w-full pl-9 pr-2 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
+              {timePeriod === 'custom' && (
+                <div className="flex items-center gap-2">
+                  <div className="relative w-36">
+                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+                    <input
+                      type="date"
+                      value={filters.startDate}
+                      onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
+                      className="w-full pl-9 pr-2 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                  <span className="text-gray-400">-</span>
+                  <div className="relative w-36">
+                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+                    <input
+                      type="date"
+                      value={filters.endDate}
+                      onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
+                      className="w-full pl-9 pr-2 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
                 </div>
-                <span className="text-gray-400">-</span>
-                <div className="relative w-36">
-                  <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
-                  <input
-                    type="date"
-                    value={filters.endDate}
-                    onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-                    className="w-full pl-9 pr-2 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-              </div>
+              )}
               <button
                 type="submit"
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors flex items-center gap-2 text-sm shadow-sm"
@@ -467,14 +586,57 @@ export default function DashboardPage() {
                 <div className="flex-1 overflow-auto">
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">
+                      {/* Header Row 1: Labels & Sort */}
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Patient</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Âge</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Date</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Modalité</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 cursor-pointer hover:bg-gray-100" onClick={() => handleSort('patientName')}>
+                          <div className="flex items-center">Patient {getSortIcon('patientName')}</div>
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 cursor-pointer hover:bg-gray-100" onClick={() => handleSort('patientAge')}>
+                          <div className="flex items-center">Âge {getSortIcon('patientAge')}</div>
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 cursor-pointer hover:bg-gray-100" onClick={() => handleSort('studyDate')}>
+                          <div className="flex items-center">Date {getSortIcon('studyDate')}</div>
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 cursor-pointer hover:bg-gray-100" onClick={() => handleSort('modality')}>
+                          <div className="flex items-center">Modalité {getSortIcon('modality')}</div>
+                        </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Description</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Statut</th>
                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Actions</th>
+                      </tr>
+                      {/* Header Row 2: Column Filters */}
+                      <tr className="bg-gray-50 border-b border-gray-200">
+                        <th className="px-6 py-2">
+                          <input 
+                            className="w-full text-xs border-gray-300 rounded px-2 py-1 font-normal focus:ring-1 focus:ring-blue-500" 
+                            placeholder="Filtrer..."
+                            value={columnFilters.patientName}
+                            onChange={e => setColumnFilters({...columnFilters, patientName: e.target.value})}
+                            onClick={e => e.stopPropagation()}
+                          />
+                        </th>
+                        <th className="px-6 py-2"></th>
+                        <th className="px-6 py-2"></th>
+                        <th className="px-6 py-2">
+                          <input 
+                            className="w-full text-xs border-gray-300 rounded px-2 py-1 font-normal focus:ring-1 focus:ring-blue-500" 
+                            placeholder="Mod..."
+                            value={columnFilters.modality}
+                            onChange={e => setColumnFilters({...columnFilters, modality: e.target.value})}
+                            onClick={e => e.stopPropagation()}
+                          />
+                        </th>
+                        <th className="px-6 py-2">
+                          <input 
+                            className="w-full text-xs border-gray-300 rounded px-2 py-1 font-normal focus:ring-1 focus:ring-blue-500" 
+                            placeholder="Filtrer..."
+                            value={columnFilters.studyDescription}
+                            onChange={e => setColumnFilters({...columnFilters, studyDescription: e.target.value})}
+                            onClick={e => e.stopPropagation()}
+                          />
+                        </th>
+                        <th className="px-6 py-2"></th>
+                        <th className="px-6 py-2"></th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
@@ -490,9 +652,7 @@ export default function DashboardPage() {
                               <div className="text-sm font-medium text-gray-900">{study.patientName}</div>
                               <div className="text-xs text-gray-500">{study.patientId}</div>
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {study.patientAge || '-'}
-                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{study.patientAge || '-'}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                               {study.studyDate ? format(new Date(study.studyDate), 'dd/MM/yyyy') : '-'}
                             </td>
@@ -561,46 +721,109 @@ export default function DashboardPage() {
                     </tbody>
                   </table>
                 </div>
-                {/* Pagination */}
+                {/* Improved Pagination */}
                 {totalPages > 1 && (
                   <div className="border-t border-gray-200 bg-white px-4 py-3 sm:px-6 shrink-0 rounded-b-lg">
                     <div className="flex items-center justify-between">
-                      <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+                      <div className="flex-1 flex items-center justify-between">
                         <div>
                           <p className="text-sm text-gray-700">
                             Affichage de <span className="font-medium">{indexOfFirstStudy + 1}</span> à <span className="font-medium">{Math.min(indexOfLastStudy, filteredStudies.length)}</span> sur <span className="font-medium">{filteredStudies.length}</span>
                           </p>
                         </div>
-                        <div>
+                        <div className="flex items-center gap-3">
+                          {/* Page Input */}
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-gray-700">Page</span>
+                            <input
+                              type="number"
+                              min="1"
+                              max={totalPages}
+                              value={pageInput || currentPage}
+                              onChange={(e) => setPageInput(e.target.value)}
+                              onKeyPress={(e) => {
+                                if (e.key === 'Enter') {
+                                  const page = parseInt(pageInput);
+                                  if (page >= 1 && page <= totalPages) {
+                                    paginate(page);
+                                    setPageInput('');
+                                  }
+                                }
+                              }}
+                              onBlur={() => {
+                                if (pageInput) {
+                                  const page = parseInt(pageInput);
+                                  if (page >= 1 && page <= totalPages) {
+                                    paginate(page);
+                                  }
+                                  setPageInput('');
+                                }
+                              }}
+                              className="w-16 px-2 py-1 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            />
+                            <span className="text-sm text-gray-700">sur {totalPages}</span>
+                          </div>
+
+                          {/* Page Navigation */}
                           <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
                             <button
                               onClick={() => paginate(currentPage - 1)}
                               disabled={currentPage === 1}
-                              className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                              className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               <span className="sr-only">Précédent</span>
                               <ChevronLeft className="h-5 w-5" aria-hidden="true" />
                             </button>
-                            {Array.from({ length: totalPages }).map((_, idx) => {
-                              const page = idx + 1;
-                              if (totalPages > 10 && (page < currentPage - 2 || page > currentPage + 2) && page !== 1 && page !== totalPages) return null;
+                            
+                            {/* Show first page */}
+                            {currentPage > 3 && (
+                              <>
+                                <button
+                                  onClick={() => paginate(1)}
+                                  className="relative inline-flex items-center px-4 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                >
+                                  1
+                                </button>
+                                {currentPage > 4 && <span className="relative inline-flex items-center px-4 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300">...</span>}
+                              </>
+                            )}
+
+                            {/* Show pages around current */}
+                            {Array.from({ length: 5 }).map((_, idx) => {
+                              const page = currentPage - 2 + idx;
+                              if (page < 1 || page > totalPages) return null;
                               return (
                                 <button
                                   key={page}
                                   onClick={() => paginate(page)}
-                                  className={`relative inline-flex items-center px-4 py-2 text-sm font-semibold ${currentPage === page
-                                    ? 'z-10 bg-blue-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600'
-                                    : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50'
-                                    }`}
+                                  className={`relative inline-flex items-center px-4 py-2 text-sm font-semibold ${
+                                    currentPage === page
+                                      ? 'z-10 bg-blue-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600'
+                                      : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50'
+                                  }`}
                                 >
                                   {page}
                                 </button>
-                              )
+                              );
                             })}
+
+                            {/* Show last page */}
+                            {currentPage < totalPages - 2 && (
+                              <>
+                                {currentPage < totalPages - 3 && <span className="relative inline-flex items-center px-4 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300">...</span>}
+                                <button
+                                  onClick={() => paginate(totalPages)}
+                                  className="relative inline-flex items-center px-4 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                >
+                                  {totalPages}
+                                </button>
+                              </>
+                            )}
+
                             <button
                               onClick={() => paginate(currentPage + 1)}
                               disabled={currentPage === totalPages}
-                              className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                              className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               <span className="sr-only">Suivant</span>
                               <ChevronRight className="h-5 w-5" aria-hidden="true" />

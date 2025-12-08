@@ -44,6 +44,9 @@ services:
       MONGODB_URI: mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@mongodb:27017/${MONGO_DATABASE}?authSource=admin
       JWT_SECRET: ${JWT_SECRET}
       FRONTEND_URL: ${FRONTEND_URL}
+      ORTHANC_URL: ${ORTHANC_URL}
+      ORTHANC_USERNAME: ${ORTHANC_USERNAME}
+      ORTHANC_PASSWORD: ${ORTHANC_PASSWORD}
     volumes:
       - ./backend/logs:/app/logs
     expose:
@@ -69,14 +72,14 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_API_URL: https://rapport.58wilaya.com/api
     container_name: ris-frontend
     restart: always
     depends_on:
       - backend
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      NEXT_PUBLIC_API_URL: https://rapport.58wilaya.com/api
       NEXT_PUBLIC_TINYMCE_API_KEY: 7mgvf74u3dfwid10bz5p3adsqja2xpm3dw0xrwwe3wua1oi0
     expose:
       - "3000"

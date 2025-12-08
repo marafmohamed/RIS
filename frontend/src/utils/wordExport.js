@@ -74,6 +74,8 @@ async function parseHtmlToDocxContent(htmlContent, options = {}) {
         return AlignmentType.RIGHT;
       if (styleAlign === "justify" || attrAlign === "justify")
         return AlignmentType.JUSTIFIED;
+      if (styleAlign === "left" || attrAlign === "left")
+        return AlignmentType.LEFT;
       return AlignmentType.LEFT;
     };
 
@@ -205,8 +207,34 @@ async function parseHtmlToDocxContent(htmlContent, options = {}) {
     };
 
     // Recursive Block Processor
-    const processBlockNode = async (node) => {
+    const processBlockNode = async (node, parentAlignment = null) => {
       const tagName = node.tagName ? node.tagName.toLowerCase() : "";
+
+      // --- HORIZONTAL LINE HANDLING (HR) ---
+      if (tagName === "hr") {
+        // Try to parse color from style or default to blue
+        let color = "3B82F6"; // Default Tailwind Blue
+        const borderTop = node.style.borderTop || node.style.border || "";
+        
+        // Extract hex color from style
+        if (borderTop.includes("#")) {
+          const match = borderTop.match(/#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})/);
+          if (match) {
+            color = match[1].toUpperCase();
+            // Convert 3-digit hex to 6-digit
+            if (color.length === 3) {
+              color = color.split('').map(c => c + c).join('');
+            }
+          }
+        }
+
+        return new Paragraph({
+          border: {
+            bottom: { style: BorderStyle.SINGLE, size: 12, color: color },
+          },
+          spacing: { before: 100, after: 100 },
+        });
+      }
 
       // --- LIST HANDLING (UL/OL) ---
       if (tagName === "ul" || tagName === "ol") {
@@ -243,6 +271,9 @@ async function parseHtmlToDocxContent(htmlContent, options = {}) {
             const cellChildren = [];
             const cellChildNodes = Array.from(td.childNodes);
 
+            // Get cell-level alignment from the TD element itself
+            const cellAlignment = getAlignment(td);
+
             const inlineRuns = [];
             for (const child of cellChildNodes) {
               if (
@@ -255,12 +286,12 @@ async function parseHtmlToDocxContent(htmlContent, options = {}) {
                   cellChildren.push(
                     new Paragraph({
                       children: [...inlineRuns],
-                      alignment: getAlignment(td),
+                      alignment: cellAlignment,
                     })
                   );
                   inlineRuns.length = 0;
                 }
-                const blocks = await processBlockNode(child);
+                const blocks = await processBlockNode(child, cellAlignment);
                 if (blocks)
                   cellChildren.push(
                     ...(Array.isArray(blocks) ? blocks : [blocks])
@@ -274,7 +305,7 @@ async function parseHtmlToDocxContent(htmlContent, options = {}) {
               cellChildren.push(
                 new Paragraph({
                   children: inlineRuns,
-                  alignment: getAlignment(td),
+                  alignment: cellAlignment,
                 })
               );
             }
@@ -284,22 +315,42 @@ async function parseHtmlToDocxContent(htmlContent, options = {}) {
               cellChildren.push(new Paragraph({ text: "" }));
             }
 
-            // Borders
+            // Borders - for layout tables (no border attribute or border="0" or border="none" or style with "none"/"collapse"), use NONE
             const tableBorder = node.getAttribute("border");
+            const tableStyle = node.style.border || "";
             const hasBorder =
-              (tableBorder && tableBorder !== "0") ||
-              (node.style.border && node.style.border !== "none");
+              tableBorder && 
+              tableBorder !== "0" && 
+              tableBorder !== "" && 
+              tableBorder !== "none" &&
+              !tableStyle.includes("none") && 
+              !tableStyle.includes("collapse");
+            
             const borderStyle = hasBorder
               ? BorderStyle.SINGLE
               : BorderStyle.NONE;
             const borderSize = hasBorder ? 4 : 0;
 
-            // Width
+            // Width - parse percentage or numeric width
             let widthVal = Math.floor(100 / (tds.length || 1));
-            const tdWidth = td.getAttribute("width");
+            const tdWidth = td.style.width || td.getAttribute("width");
             if (tdWidth) {
-              const parsed = parseInt(tdWidth);
-              if (!isNaN(parsed)) widthVal = Math.round(parsed);
+              if (tdWidth.includes("%")) {
+                const parsed = parseInt(tdWidth);
+                if (!isNaN(parsed)) widthVal = parsed;
+              } else {
+                const parsed = parseInt(tdWidth);
+                if (!isNaN(parsed)) widthVal = parsed;
+              }
+            }
+
+            // Vertical alignment
+            const vAlign = td.style.verticalAlign || "top";
+            let vertAlign = VerticalAlign.TOP;
+            if (vAlign === "middle" || vAlign === "center") {
+              vertAlign = VerticalAlign.CENTER;
+            } else if (vAlign === "bottom") {
+              vertAlign = VerticalAlign.BOTTOM;
             }
 
             cells.push(
@@ -312,7 +363,8 @@ async function parseHtmlToDocxContent(htmlContent, options = {}) {
                   left: { style: borderStyle, size: borderSize },
                   right: { style: borderStyle, size: borderSize },
                 },
-                verticalAlign: VerticalAlign.CENTER,
+                verticalAlign: vertAlign,
+                margins: { top: 50, bottom: 50, left: 50, right: 50 },
               })
             );
           }
@@ -331,10 +383,11 @@ async function parseHtmlToDocxContent(htmlContent, options = {}) {
         });
       }
 
-      const alignment =
+      const alignment = parentAlignment || (
         node.nodeType === Node.ELEMENT_NODE
           ? getAlignment(node)
-          : AlignmentType.LEFT;
+          : AlignmentType.LEFT
+      );
       const runs = await processInlineNodes(node);
 
       if (runs.length > 0) {

@@ -14,7 +14,9 @@ import {
   ChevronUp, 
   Search, 
   GripHorizontal,
-  HardDrive 
+  HardDrive,
+  Send,
+  Loader2
 } from 'lucide-react';
 import ReportEditorV2 from '@/components/reporting/ReportEditorV2';
 import OHIFViewer from '@/components/reporting/OHIFViewer';
@@ -54,12 +56,31 @@ export default function ReportingPage({ params }) {
   // Validation History Terminal State
   const [showValidationHistory, setShowValidationHistory] = useState(false);
 
+  // DICOM Send State
+  const [modalitiesList, setModalitiesList] = useState([]);
+  const [showSendModal, setShowSendModal] = useState(false);
+  const [targetNode, setTargetNode] = useState('');
+  const [sending, setSending] = useState(false);
+
   useEffect(() => {
     loadStudyAndReport();
     loadCurrentUser();
     loadTemplates();
     loadActiveClinic();
+    loadModalities();
   }, [studyUid, clinicId]);
+
+  const loadModalities = async () => {
+    try {
+      const response = await studiesAPI.getModalities(clinicId);
+      setModalitiesList(response.data || []);
+      if (response.data && response.data.length > 0) {
+        setTargetNode(response.data[0]);
+      }
+    } catch (error) {
+      console.error('Failed to load modalities:', error);
+    }
+  };
 
   // Load the specific clinic selected in dashboard, or fallback to default
   const loadActiveClinic = async () => {
@@ -97,7 +118,7 @@ export default function ReportingPage({ params }) {
       setLoading(true);
 
       // Load study details
-      const studyResponse = await studiesAPI.getByUid(studyUid);
+      const studyResponse = await studiesAPI.getByUid(studyUid, clinicId);
       setStudy(studyResponse.data);
       console.log(studyResponse.data)
       // Check if report exists
@@ -416,6 +437,20 @@ export default function ReportingPage({ params }) {
     }
   };
 
+  const handleSendStudy = async () => {
+    if (!study || !targetNode) return;
+    setSending(true);
+    try {
+      await studiesAPI.sendToNode(study.studyInstanceUid, targetNode, clinicId);
+      toast.success(`Étude envoyée à ${targetNode}`);
+      setShowSendModal(false);
+    } catch (error) {
+      toast.error("Erreur lors de l'envoi");
+    } finally {
+      setSending(false);
+    }
+  };
+
   const handleExportDICOM = async () => {
     try {
       // Create the URL for the download
@@ -527,6 +562,20 @@ export default function ReportingPage({ params }) {
               title="Télécharger l'étude DICOM (ZIP)"
             >
               <HardDrive size={16} />
+            </button>
+
+            {/* Send to DICOM Node Button */}
+            <button
+              onClick={() => modalitiesList.length > 0 && setShowSendModal(true)}
+              disabled={modalitiesList.length === 0}
+              className={`p-1.5 rounded transition-colors ${
+                modalitiesList.length > 0 
+                  ? 'bg-blue-700 hover:bg-blue-600 cursor-pointer' 
+                  : 'bg-blue-900/50 cursor-not-allowed opacity-60'
+              }`}
+              title={modalitiesList.length > 0 ? "Envoyer vers DICOM Node" : "Aucun nœud DICOM configuré"}
+            >
+              <Send size={16} />
             </button>
           </div>
         </div>
@@ -752,6 +801,61 @@ export default function ReportingPage({ params }) {
             <span className="px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px]">
               {existingReport.validationCount || 0}
             </span>
+          </div>
+        </div>
+      )}
+
+      {/* Send to DICOM Node Modal */}
+      {showSendModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4" onClick={() => setShowSendModal(false)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                <Send size={18} className="text-indigo-600"/> Envoyer l'étude
+              </h3>
+              <button onClick={() => setShowSendModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div>
+                <p className="text-sm text-gray-500 mb-1">Patient</p>
+                <p className="font-medium text-gray-900">{study?.patientName}</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Destination (Node)</label>
+                {modalitiesList.length > 0 ? (
+                  <select
+                    value={targetNode}
+                    onChange={(e) => setTargetNode(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                  >
+                    {modalitiesList.map((mod) => (
+                      <option key={mod} value={mod}>{mod}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <p className="text-sm text-red-500 bg-red-50 p-2 rounded">Aucun nœud DICOM configuré.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50">
+              <button 
+                onClick={() => setShowSendModal(false)} 
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 rounded-lg"
+              >
+                Annuler
+              </button>
+              <button 
+                onClick={handleSendStudy} 
+                disabled={sending || modalitiesList.length === 0}
+                className="px-4 py-2 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {sending ? <Loader2 size={16} className="animate-spin"/> : <Send size={16}/>}
+                Envoyer
+              </button>
+            </div>
           </div>
         </div>
       )}

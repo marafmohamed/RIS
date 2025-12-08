@@ -33,15 +33,22 @@ class OrthancService {
 
   async makeRequest(endpoint, options = {}) {
     try {
+      // Set a timeout for fetch requests to avoid hanging
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
+
       const url = `${this.baseUrl}${endpoint}`;
       const response = await fetch(url, {
         ...options,
+        signal: controller.signal,
         headers: {
           'Authorization': this.authHeader,
           'Content-Type': 'application/json',
           ...options.headers
         }
       });
+      
+      clearTimeout(timeout);
 
       if (!response.ok) {
         throw new Error(`Orthanc API error: ${response.status} ${response.statusText}`);
@@ -49,115 +56,112 @@ class OrthancService {
 
       return await response.json();
     } catch (error) {
-      console.error('Orthanc request error:', error);
-      throw error;
+      console.error('Orthanc request error:', error.message);
+      throw error; // Propagate to route handler
     }
   }
 
-  // --- UPDATED FIND STUDIES ---
+  /**
+   * Optimized Find Studies
+   * Pushes filtering logic to Orthanc DB instead of Node memory
+   */
   async findStudies(query = {}) {
     const searchQuery = {
       Level: 'Study',
       Expand: true,
-      Query: { ...query }
+      Query: { ...query },
+      RequestedTags: [
+        "ModalitiesInStudy",
+        "StudyDescription",
+        "PatientAge",
+        "NumberOfStudyRelatedSeries"
+      ]
     };
 
-    // 1. Get the list of studies
-    const studies = await this.makeRequest('/tools/find', {
-      method: 'POST',
-      body: JSON.stringify(searchQuery)
-    });
-
-    // 2. "Hydrate" missing data (Modality)
-    // Since ModalitiesInStudy is missing, we fetch the first Series to get the Modality.
-    const hydratedStudies = await Promise.all(studies.map(async (study) => {
-      // Check if we need to fetch modality
-      const hasModality = study.ModalitiesInStudy || (study.MainDicomTags && study.MainDicomTags.Modality);
+    try {
+      const studies = await this.makeRequest('/tools/find', {
+        method: 'POST',
+        body: JSON.stringify(searchQuery)
+      });
+      console.log(studies)
       
-      if (!hasModality && study.Series && study.Series.length > 0) {
-        try {
-          // Fetch the details of the FIRST series in the study
-          const firstSeriesId = study.Series[0];
-          const seriesData = await this.makeRequest(`/series/${firstSeriesId}`);
-          
-          // Inject the found modality into the study object's tags so parseStudy can find it
-          if (seriesData.MainDicomTags && seriesData.MainDicomTags.Modality) {
-            study.MainDicomTags = study.MainDicomTags || {};
-            study.MainDicomTags.Modality = seriesData.MainDicomTags.Modality;
-          }
-        } catch (err) {
-          console.warn(`Could not fetch series for study ${study.ID} to determine modality.`);
-        }
-      }
-      return study;
-    }));
-
-    return hydratedStudies;
+      return studies;
+    } catch (error) {
+      console.error("Error finding studies:", error);
+      return [];
+    }
   }
 
   async getStudyDetails(studyId) {
     return await this.makeRequest(`/studies/${studyId}`);
   }
 
-  async getStudyInstances(studyId) {
-    return await this.makeRequest(`/studies/${studyId}/instances`);
-  }
-
   async getSystemInfo() {
     return await this.makeRequest('/system');
   }
 
+  // Get list of configured DICOM nodes (AETs)
+  async getModalities() {
+    return await this.makeRequest('/modalities');
+  }
+
+  // Send a specific study to a target modality
+  async sendStudyToModality(studyId, targetAet) {
+    return await this.makeRequest(`/modalities/${targetAet}/store`, {
+      method: 'POST',
+      body: JSON.stringify(studyId)
+    });
+  }
+
+  // Optimized Date Search
   async searchStudiesByDate(startDate, endDate) {
     const dateQuery = {};
-    if (startDate && endDate) {
-      const start = startDate.replace(/-/g, '');
-      const end = endDate.replace(/-/g, '');
-      dateQuery.StudyDate = `${start}-${end}`;
-    } else if (startDate) {
-      const start = startDate.replace(/-/g, '');
-      dateQuery.StudyDate = `${start}-`;
+    const cleanStart = startDate ? startDate.replace(/-/g, '') : '';
+    const cleanEnd = endDate ? endDate.replace(/-/g, '') : '';
+
+    if (cleanStart && cleanEnd) {
+      dateQuery.StudyDate = `${cleanStart}-${cleanEnd}`;
+    } else if (cleanStart) {
+      dateQuery.StudyDate = `${cleanStart}-`;
+    } else if (cleanEnd) {
+      dateQuery.StudyDate = `-${cleanEnd}`;
     }
+    
     return await this.findStudies(dateQuery);
   }
 
   async searchStudiesByPatientName(patientName) {
-    // Use case-insensitive wildcard search
-    // DICOM standard uses * as wildcard, searches are typically case-insensitive
-    return await this.findStudies({
-      PatientName: `*${patientName}*`
-    });
+    return await this.findStudies({ PatientName: `*${patientName}*` });
   }
 
   async searchStudiesByPatientID(patientId) {
-    // Use wildcard for partial matches
-    return await this.findStudies({
-      PatientID: `*${patientId}*`
-    });
+    return await this.findStudies({ PatientID: `*${patientId}*` });
   }
 
-  // --- UPDATED PARSER ---
   parseStudy(orthancStudy) {
     const mainDicomTags = orthancStudy.MainDicomTags || {};
     const patientMainDicomTags = orthancStudy.PatientMainDicomTags || {};
+    const requestedTags = orthancStudy.RequestedTags || {};
 
-    // 1. Extract Modality (Now populated by findStudies if missing)
-    let modality = orthancStudy.ModalitiesInStudy || mainDicomTags.ModalitiesInStudy || mainDicomTags.Modality || [];
+    // 1. Modality Extraction - Check RequestedTags first
+    let modality = requestedTags.ModalitiesInStudy || 
+                   orthancStudy.ModalitiesInStudy || 
+                   mainDicomTags.ModalitiesInStudy || 
+                   mainDicomTags.Modality || 
+                   'Unknown';
     
     if (Array.isArray(modality)) {
       modality = modality.join('/');
     }
 
-    // 2. Extract/Calculate Age
-    let age = patientMainDicomTags.PatientAge || mainDicomTags.PatientAge;
+    // 2. Age Extraction - Check RequestedTags first
+    let age = requestedTags.PatientAge || 
+              patientMainDicomTags.PatientAge || 
+              mainDicomTags.PatientAge;
     
-    // Only calculate if age tag is missing AND we have a BirthDate
+    // Calculate age if missing and we have birth date
     if ((!age || age === '000') && patientMainDicomTags.PatientBirthDate) {
         age = this.calculateAge(patientMainDicomTags.PatientBirthDate, mainDicomTags.StudyDate);
-    }
-
-    // Handle empty age specifically
-    if (!age) {
-        age = ''; // Return empty string instead of null/undefined to be safe for frontend
     }
 
     return {
@@ -166,13 +170,12 @@ class OrthancService {
       patientName: (patientMainDicomTags.PatientName || 'Unknown').replace(/\^/g, ' ').trim(),
       patientId: patientMainDicomTags.PatientID || '',
       patientBirthDate: patientMainDicomTags.PatientBirthDate || '',
-      patientAge: age,
+      patientAge: age || '',
       studyDate: this.parseDicomDate(mainDicomTags.StudyDate),
       studyTime: mainDicomTags.StudyTime || '',
       studyDescription: mainDicomTags.StudyDescription || '',
       modality: modality || 'Unknown', 
       accessionNumber: mainDicomTags.AccessionNumber || '',
-      numberOfSeries: orthancStudy.Series ? orthancStudy.Series.length : 0,
       institutionName: mainDicomTags.InstitutionName || ''
     };
   }
@@ -223,10 +226,10 @@ class OrthancService {
         ageMonths--;
       }
       // Ensure age in months is not negative
-      return ageMonths >= 0 ? `${ageMonths}Mois` : null;
+      return ageMonths >= 0 ? `${ageMonths}M` : null; // Shortened for table
     }
 
-    return ageYears >= 0 ? `${ageYears}Ans` : null;
+    return `${ageYears}A`; // Shortened for table
   }
 }
 

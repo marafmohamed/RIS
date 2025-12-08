@@ -62,8 +62,13 @@ export const usersAPI = {
 // Studies API
 export const studiesAPI = {
   getAll: (params) => api.get('/studies', { params }),
-  getByUid: (studyUid) => api.get(`/studies/${studyUid}`),
+  getByUid: (studyUid, clinicId) => {
+    const params = clinicId ? { clinicId } : {};
+    return api.get(`/studies/${studyUid}`, { params });
+  },
   testConnection: () => api.get('/studies/test/connection'),
+  getModalities: (clinicId) => api.get('/studies/tools/modalities', { params: { clinicId } }),
+  sendToNode: (studyUid, targetAet, clinicId) => api.post(`/studies/${studyUid}/send`, { targetAet, clinicId }),
 };
 
 // Reports API
