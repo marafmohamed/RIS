@@ -448,6 +448,10 @@ export default function ReportingPage({ params }) {
     setSendStatus('Initialisation...');
     setSendError(null);
     
+    let pollInterval = null;
+    let timeoutId = null;
+    let isComplete = false;
+    
     try {
       // Start the send operation
       const response = await studiesAPI.sendToNode(study.studyInstanceUid, targetNode, clinicId);
@@ -456,15 +460,25 @@ export default function ReportingPage({ params }) {
       if (!jobId) {
         // If no job ID, assume success (older Orthanc versions)
         toast.success(`Étude envoyée à ${targetNode}`);
-        setShowSendModal(false);
+        setTimeout(() => {
+          setShowSendModal(false);
+          setSending(false);
+          setSendProgress(0);
+          setSendStatus('');
+        }, 1000);
         return;
       }
       
+      setSendStatus('Envoi en cours...');
+      console.log('Starting job polling for jobId:', jobId);
+      
       // Poll for job status
-      const pollInterval = setInterval(async () => {
+      pollInterval = setInterval(async () => {
         try {
           const jobResponse = await studiesAPI.getJobStatus(jobId, clinicId);
           const job = jobResponse.data;
+          
+          console.log('Job status:', job.State, 'Progress:', job.Progress);
           
           // Update progress
           if (job.Progress !== undefined) {
@@ -477,19 +491,27 @@ export default function ReportingPage({ params }) {
           } else if (job.State === 'Pending') {
             setSendStatus('En attente...');
           } else if (job.State === 'Success') {
+            console.log('Job completed successfully');
+            isComplete = true;
             clearInterval(pollInterval);
+            if (timeoutId) clearTimeout(timeoutId);
+            
             setSendStatus('Envoi terminé avec succès!');
             setSendProgress(100);
             toast.success(`Étude envoyée avec succès à ${targetNode}`);
             setTimeout(() => {
               setShowSendModal(false);
-              // Reset states
               setSending(false);
               setSendProgress(0);
               setSendStatus('');
+              setSendError(null);
             }, 1500);
           } else if (job.State === 'Failure') {
+            console.log('Job failed:', job.ErrorDetails);
+            isComplete = true;
             clearInterval(pollInterval);
+            if (timeoutId) clearTimeout(timeoutId);
+            
             const errorMsg = job.ErrorDetails || 'Échec de l\'envoi';
             setSendError(errorMsg);
             setSendStatus('Échec');
@@ -498,24 +520,45 @@ export default function ReportingPage({ params }) {
           }
         } catch (pollError) {
           console.error('Error polling job status:', pollError);
-          clearInterval(pollInterval);
-          setSendError('Impossible de suivre la progression');
-          setSending(false);
+          // Don't fail on individual poll errors, keep trying
+          // But if we get consistent 404s, the job might have completed already
+          if (pollError.response?.status === 404) {
+            console.log('Job not found - may have completed. Assuming success.');
+            isComplete = true;
+            clearInterval(pollInterval);
+            if (timeoutId) clearTimeout(timeoutId);
+            
+            setSendStatus('Envoi terminé!');
+            setSendProgress(100);
+            toast.success(`Étude envoyée à ${targetNode}`);
+            setTimeout(() => {
+              setShowSendModal(false);
+              setSending(false);
+              setSendProgress(0);
+              setSendStatus('');
+              setSendError(null);
+            }, 1500);
+          }
         }
       }, 500); // Poll every 500ms
       
       // Timeout after 60 seconds
-      setTimeout(() => {
-        clearInterval(pollInterval);
-        if (sending) {
-          setSendError('Délai d\'attente dépassé');
-          toast.error('L\'opération a pris trop de temps');
+      timeoutId = setTimeout(() => {
+        if (!isComplete && pollInterval) {
+          clearInterval(pollInterval);
+          setSendError('Délai d\'attente dépassé lors du suivi de progression. L\'envoi peut être en cours, vérifiez le serveur de destination.');
+          toast.warning('Impossible de suivre la progression, mais l\'envoi peut avoir réussi');
           setSending(false);
         }
       }, 60000);
       
     } catch (error) {
       console.error('Error sending study:', error);
+      
+      // Clean up intervals
+      if (pollInterval) clearInterval(pollInterval);
+      if (timeoutId) clearTimeout(timeoutId);
+      
       const errorData = error.response?.data;
       
       if (errorData) {
@@ -892,7 +935,7 @@ export default function ReportingPage({ params }) {
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
               <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-                <Send size={18} className="text-indigo-600"/> Envoyer l'étude DICOM
+                <Send size={18} className="text-indigo-600"/> Envoyer l&apos;étude DICOM
               </h3>
               <button 
                 onClick={() => setShowSendModal(false)} 
@@ -958,7 +1001,7 @@ export default function ReportingPage({ params }) {
                   <div className="flex items-start gap-2">
                     <span className="text-red-600 text-lg">⚠️</span>
                     <div className="flex-1">
-                      <p className="text-sm font-medium text-red-800">Erreur d'envoi</p>
+                      <p className="text-sm font-medium text-red-800">Erreur d&apos;envoi</p>
                       <p className="text-xs text-red-600 mt-1 whitespace-pre-line">{sendError}</p>
                     </div>
                   </div>

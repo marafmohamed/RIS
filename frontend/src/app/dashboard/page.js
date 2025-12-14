@@ -30,7 +30,7 @@ export default function DashboardPage() {
   const [isNavigating, setIsNavigating] = useState(false);
   const [activeFilter, setActiveFilter] = useState('all');
   const [showAssignModal, setShowAssignModal] = useState(false);
-  const [timePeriod, setTimePeriod] = useState('today');
+  const [timePeriod, setTimePeriod] = useState('3days');
 
   // Selection State
   const [selectedStudy, setSelectedStudy] = useState(null);
@@ -82,6 +82,13 @@ export default function DashboardPage() {
     }
   }, [user]);
 
+  // Initialize date range for default 3 days period
+  useEffect(() => {
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const threeDaysAgo = format(subDays(new Date(), 3), 'yyyy-MM-dd');
+    setFilters(prev => ({ ...prev, startDate: threeDaysAgo, endDate: todayStr }));
+  }, []); // Run only once on mount
+
   useEffect(() => {
     if (clinics.length > 0 && !filters.clinicId) {
       const defaultClinic = clinics.find(c => c.isDefault) || clinics[0];
@@ -117,6 +124,9 @@ export default function DashboardPage() {
     
     if (period === 'today') {
       setFilters(prev => ({ ...prev, startDate: todayStr, endDate: todayStr, patientName: '', patientId: '' }));
+    } else if (period === '3days') {
+      const threeDaysAgo = format(subDays(new Date(), 3), 'yyyy-MM-dd');
+      setFilters(prev => ({ ...prev, startDate: threeDaysAgo, endDate: todayStr, patientName: '', patientId: '' }));
     } else if (period === 'week') {
       const weekAgo = format(subDays(new Date(), 7), 'yyyy-MM-dd');
       setFilters(prev => ({ ...prev, startDate: weekAgo, endDate: todayStr, patientName: '', patientId: '' }));
@@ -468,6 +478,12 @@ export default function DashboardPage() {
                 className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all ${timePeriod === 'today' ? 'bg-blue-600 text-white shadow-sm' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
               >
                 Aujourd&apos;hui
+              </button>
+              <button
+                onClick={() => handlePeriodChange('3days')}
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all ${timePeriod === '3days' ? 'bg-blue-600 text-white shadow-sm' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+              >
+                3 Derniers Jours
               </button>
               <button
                 onClick={() => handlePeriodChange('week')}
