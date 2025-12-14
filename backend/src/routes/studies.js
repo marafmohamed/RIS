@@ -257,7 +257,12 @@ router.post("/:studyUid/send", async (req, res) => {
     const { studyUid } = req.params;
     const { targetAet, clinicId } = req.body;
 
-    if (!targetAet) return res.status(400).json({ error: "Target AET is required" });
+    if (!targetAet) {
+      return res.status(400).json({ 
+        error: "Destination manquante",
+        detail: "Veuillez sélectionner un nœud DICOM de destination"
+      });
+    }
 
     const orthancService = await getOrthancService(clinicId, req.user);
     
@@ -265,16 +270,87 @@ router.post("/:studyUid/send", async (req, res) => {
     const search = await orthancService.findStudies({ StudyInstanceUID: studyUid });
     
     if (!search || search.length === 0) {
-      return res.status(404).json({ error: "Study not found" });
+      return res.status(404).json({ 
+        error: "Étude introuvable",
+        detail: "L'étude demandée n'existe pas dans le PACS"
+      });
     }
     
     const orthancId = search[0].ID;
-    await orthancService.sendStudyToModality(orthancId, targetAet);
     
-    res.json({ success: true, message: `Study sent to ${targetAet}` });
+    // Send study and get job ID for progress tracking
+    const result = await orthancService.sendStudyToModality(orthancId, targetAet);
+    
+    res.json({ 
+      success: true, 
+      message: `Envoi vers ${targetAet} démarré`,
+      jobId: result.ID,
+      path: result.Path
+    });
   } catch (error) {
     console.error("Error sending study:", error);
-    res.status(500).json({ error: "Failed to send study" });
+    
+    const errorMsg = error.message || '';
+    
+    // Provide specific error messages based on error type
+    if (errorMsg.includes('ECONNREFUSED')) {
+      return res.status(503).json({ 
+        error: "Serveur PACS indisponible",
+        detail: "Impossible de se connecter au serveur PACS. Vérifiez que le serveur est en ligne."
+      });
+    }
+    
+    if (errorMsg.includes('404') || errorMsg.includes('Unknown modality')) {
+      return res.status(404).json({ 
+        error: "Nœud DICOM non configuré",
+        detail: `Le nœud DICOM "${targetAet}" n'existe pas dans la configuration Orthanc. Veuillez d'abord configurer ce nœud dans Orthanc (Configuration → Modalities).`
+      });
+    }
+    
+    if (errorMsg.includes('timeout') || errorMsg.includes('aborted')) {
+      return res.status(504).json({ 
+        error: "Délai d'attente dépassé",
+        detail: "L'opération a pris trop de temps. Le serveur distant ne répond pas."
+      });
+    }
+    
+    // Check for DICOM network errors (500 errors from Orthanc usually indicate DICOM protocol issues)
+    if (errorMsg.includes('500')) {
+      // Common causes of 500 errors when sending DICOM
+      if (errorMsg.toLowerCase().includes('association') || errorMsg.toLowerCase().includes('connection')) {
+        return res.status(500).json({ 
+          error: "Échec de connexion DICOM",
+          detail: "Impossible d'établir une connexion DICOM avec le nœud distant. Causes possibles:\n• Le nœud DICOM n'est pas configuré correctement\n• L'adresse IP ou le port est incorrect\n• Le serveur distant n'accepte pas les connexions\n• Le AE Title (Application Entity) ne correspond pas"
+        });
+      }
+      
+      return res.status(500).json({ 
+        error: "Erreur du serveur PACS",
+        detail: `Le serveur PACS a rencontré une erreur lors de l'envoi. Causes possibles:\n• Le nœud DICOM "${targetAet}" n'est pas configuré dans Orthanc\n• Les paramètres réseau (IP, Port, AE Title) sont incorrects\n• Le serveur distant refuse la connexion\n• Vérifiez la configuration dans Orthanc: Configuration → Modalities`
+      });
+    }
+    
+    // Generic error
+    res.status(500).json({ 
+      error: "Échec de l'envoi DICOM",
+      detail: errorMsg || "Une erreur inattendue s'est produite lors de l'envoi de l'étude."
+    });
+  }
+});
+
+// Get job status for progress tracking
+router.get("/jobs/:jobId", async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const { clinicId } = req.query;
+    
+    const orthancService = await getOrthancService(clinicId, req.user);
+    const jobStatus = await orthancService.getJobStatus(jobId);
+    
+    res.json(jobStatus);
+  } catch (error) {
+    console.error("Error fetching job status:", error);
+    res.status(500).json({ error: "Failed to fetch job status" });
   }
 });
 

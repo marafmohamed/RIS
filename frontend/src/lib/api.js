@@ -69,6 +69,7 @@ export const studiesAPI = {
   testConnection: () => api.get('/studies/test/connection'),
   getModalities: (clinicId) => api.get('/studies/tools/modalities', { params: { clinicId } }),
   sendToNode: (studyUid, targetAet, clinicId) => api.post(`/studies/${studyUid}/send`, { targetAet, clinicId }),
+  getJobStatus: (jobId, clinicId) => api.get(`/studies/jobs/${jobId}`, { params: { clinicId } }),
 };
 
 // Reports API

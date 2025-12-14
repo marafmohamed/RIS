@@ -51,7 +51,16 @@ class OrthancService {
       clearTimeout(timeout);
 
       if (!response.ok) {
-        throw new Error(`Orthanc API error: ${response.status} ${response.statusText}`);
+        // Try to get more details from the response body
+        let errorDetails = '';
+        try {
+          const errorBody = await response.text();
+          errorDetails = errorBody ? ` - ${errorBody}` : '';
+        } catch (e) {
+          // If we can't read the body, just continue
+        }
+        
+        throw new Error(`Orthanc API error: ${response.status} ${response.statusText}${errorDetails}`);
       }
 
       return await response.json();
@@ -113,6 +122,11 @@ class OrthancService {
     });
   }
 
+  // Get job status for progress tracking
+  async getJobStatus(jobId) {
+    return await this.makeRequest(`/jobs/${jobId}`);
+  }
+
   // Optimized Date Search
   async searchStudiesByDate(startDate, endDate) {
     const dateQuery = {};
@@ -160,8 +174,11 @@ class OrthancService {
               mainDicomTags.PatientAge;
     
     // Calculate age if missing and we have birth date
-    if ((!age || age === '000') && patientMainDicomTags.PatientBirthDate) {
+    if ((!age || age === '000' || age === '000Y') && patientMainDicomTags.PatientBirthDate) {
         age = this.calculateAge(patientMainDicomTags.PatientBirthDate, mainDicomTags.StudyDate);
+    } else if (age) {
+        // Format the DICOM age string to our desired format
+        age = this.formatDicomAge(age);
     }
 
     return {
@@ -178,6 +195,39 @@ class OrthancService {
       accessionNumber: mainDicomTags.AccessionNumber || '',
       institutionName: mainDicomTags.InstitutionName || ''
     };
+  }
+
+  formatDicomAge(dicomAge) {
+    if (!dicomAge || typeof dicomAge !== 'string') return '';
+    
+    // DICOM age format: nnnU where nnn is age and U is unit (Y=years, M=months, W=weeks, D=days)
+    // Examples: "025Y", "003M", "010W", "005D"
+    const match = dicomAge.match(/^(\d+)([YMWD])$/);
+    
+    if (!match) return dicomAge; // Return as-is if doesn't match expected format
+    
+    const ageValue = parseInt(match[1]);
+    const unit = match[2];
+    
+    switch(unit) {
+      case 'Y': // Years
+        const formattedYears = ageValue < 100 
+          ? String(ageValue).padStart(2, '0') 
+          : String(ageValue);
+        return `${formattedYears} Ans`;
+      
+      case 'M': // Months
+        return `${String(ageValue).padStart(2, '0')} Mois`;
+      
+      case 'W': // Weeks
+        return `${String(ageValue).padStart(2, '0')} Semaines`;
+      
+      case 'D': // Days
+        return `${String(ageValue).padStart(2, '0')} Jours`;
+      
+      default:
+        return dicomAge;
+    }
   }
 
   parseDicomDate(dicomDate) {
@@ -226,10 +276,14 @@ class OrthancService {
         ageMonths--;
       }
       // Ensure age in months is not negative
-      return ageMonths >= 0 ? `${ageMonths}M` : null; // Shortened for table
+      return ageMonths >= 0 ? `${String(ageMonths).padStart(2, '0')} Mois` : null;
     }
 
-    return `${ageYears}A`; // Shortened for table
+    // Format years: 2 digits for ages under 100, 3 digits for 100+
+    const formattedAge = ageYears < 100 
+      ? String(ageYears).padStart(2, '0') 
+      : String(ageYears);
+    return `${formattedAge} Ans`;
   }
 }
 

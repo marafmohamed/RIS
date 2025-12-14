@@ -61,6 +61,9 @@ export default function ReportingPage({ params }) {
   const [showSendModal, setShowSendModal] = useState(false);
   const [targetNode, setTargetNode] = useState('');
   const [sending, setSending] = useState(false);
+  const [sendProgress, setSendProgress] = useState(0);
+  const [sendStatus, setSendStatus] = useState('');
+  const [sendError, setSendError] = useState(null);
 
   useEffect(() => {
     loadStudyAndReport();
@@ -439,14 +442,92 @@ export default function ReportingPage({ params }) {
 
   const handleSendStudy = async () => {
     if (!study || !targetNode) return;
+    
     setSending(true);
+    setSendProgress(0);
+    setSendStatus('Initialisation...');
+    setSendError(null);
+    
     try {
-      await studiesAPI.sendToNode(study.studyInstanceUid, targetNode, clinicId);
-      toast.success(`Étude envoyée à ${targetNode}`);
-      setShowSendModal(false);
+      // Start the send operation
+      const response = await studiesAPI.sendToNode(study.studyInstanceUid, targetNode, clinicId);
+      const { jobId } = response.data;
+      
+      if (!jobId) {
+        // If no job ID, assume success (older Orthanc versions)
+        toast.success(`Étude envoyée à ${targetNode}`);
+        setShowSendModal(false);
+        return;
+      }
+      
+      // Poll for job status
+      const pollInterval = setInterval(async () => {
+        try {
+          const jobResponse = await studiesAPI.getJobStatus(jobId, clinicId);
+          const job = jobResponse.data;
+          
+          // Update progress
+          if (job.Progress !== undefined) {
+            setSendProgress(job.Progress);
+          }
+          
+          // Update status message
+          if (job.State === 'Running') {
+            setSendStatus(`Envoi en cours... ${Math.round(job.Progress || 0)}%`);
+          } else if (job.State === 'Pending') {
+            setSendStatus('En attente...');
+          } else if (job.State === 'Success') {
+            clearInterval(pollInterval);
+            setSendStatus('Envoi terminé avec succès!');
+            setSendProgress(100);
+            toast.success(`Étude envoyée avec succès à ${targetNode}`);
+            setTimeout(() => {
+              setShowSendModal(false);
+              // Reset states
+              setSending(false);
+              setSendProgress(0);
+              setSendStatus('');
+            }, 1500);
+          } else if (job.State === 'Failure') {
+            clearInterval(pollInterval);
+            const errorMsg = job.ErrorDetails || 'Échec de l\'envoi';
+            setSendError(errorMsg);
+            setSendStatus('Échec');
+            toast.error(`Erreur: ${errorMsg}`);
+            setSending(false);
+          }
+        } catch (pollError) {
+          console.error('Error polling job status:', pollError);
+          clearInterval(pollInterval);
+          setSendError('Impossible de suivre la progression');
+          setSending(false);
+        }
+      }, 500); // Poll every 500ms
+      
+      // Timeout after 60 seconds
+      setTimeout(() => {
+        clearInterval(pollInterval);
+        if (sending) {
+          setSendError('Délai d\'attente dépassé');
+          toast.error('L\'opération a pris trop de temps');
+          setSending(false);
+        }
+      }, 60000);
+      
     } catch (error) {
-      toast.error("Erreur lors de l'envoi");
-    } finally {
+      console.error('Error sending study:', error);
+      const errorData = error.response?.data;
+      
+      if (errorData) {
+        setSendError(errorData.detail || errorData.error || 'Erreur inconnue');
+        toast.error(errorData.error || 'Erreur lors de l\'envoi', {
+          description: errorData.detail
+        });
+      } else {
+        setSendError('Erreur de connexion au serveur');
+        toast.error('Impossible de communiquer avec le serveur');
+      }
+      
       setSending(false);
     }
   };
@@ -807,54 +888,107 @@ export default function ReportingPage({ params }) {
 
       {/* Send to DICOM Node Modal */}
       {showSendModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4" onClick={() => setShowSendModal(false)}>
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4" onClick={() => !sending && setShowSendModal(false)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
               <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-                <Send size={18} className="text-indigo-600"/> Envoyer l'étude
+                <Send size={18} className="text-indigo-600"/> Envoyer l'étude DICOM
               </h3>
-              <button onClick={() => setShowSendModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+              <button 
+                onClick={() => setShowSendModal(false)} 
+                disabled={sending}
+                className="text-gray-400 hover:text-gray-600 text-2xl leading-none disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                &times;
+              </button>
             </div>
             
             <div className="p-6 space-y-4">
               <div>
                 <p className="text-sm text-gray-500 mb-1">Patient</p>
                 <p className="font-medium text-gray-900">{study?.patientName}</p>
+                <p className="text-xs text-gray-500 mt-1">ID: {study?.patientId} • Modalité: {study?.modality}</p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Destination (Node)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Destination (Nœud DICOM)</label>
                 {modalitiesList.length > 0 ? (
                   <select
                     value={targetNode}
                     onChange={(e) => setTargetNode(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                    disabled={sending}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
                   >
                     {modalitiesList.map((mod) => (
                       <option key={mod} value={mod}>{mod}</option>
                     ))}
                   </select>
                 ) : (
-                  <p className="text-sm text-red-500 bg-red-50 p-2 rounded">Aucun nœud DICOM configuré.</p>
+                  <div className="text-sm text-red-600 bg-red-50 p-3 rounded-lg border border-red-200">
+                    <p className="font-medium">Aucun nœud DICOM configuré</p>
+                    <p className="text-xs mt-1">Veuillez configurer les nœuds DICOM dans Orthanc</p>
+                  </div>
                 )}
               </div>
+
+              {/* Progress Bar */}
+              {sending && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600 font-medium">{sendStatus}</span>
+                    <span className="text-indigo-600 font-semibold">{Math.round(sendProgress)}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                    <div 
+                      className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300 ease-out"
+                      style={{ width: `${sendProgress}%` }}
+                    >
+                      <div className="w-full h-full bg-gradient-to-r from-transparent via-white/30 to-transparent animate-pulse"></div>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    ⏳ Transfert des images DICOM vers le serveur distant...
+                  </p>
+                </div>
+              )}
+
+              {/* Error Display */}
+              {sendError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <div className="flex items-start gap-2">
+                    <span className="text-red-600 text-lg">⚠️</span>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-red-800">Erreur d'envoi</p>
+                      <p className="text-xs text-red-600 mt-1 whitespace-pre-line">{sendError}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50">
               <button 
-                onClick={() => setShowSendModal(false)} 
-                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 rounded-lg"
+                onClick={() => {
+                  setShowSendModal(false);
+                  setSendError(null);
+                  setSendProgress(0);
+                  setSendStatus('');
+                }} 
+                disabled={sending}
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Annuler
+                {sending ? 'Envoi en cours...' : 'Annuler'}
               </button>
-              <button 
-                onClick={handleSendStudy} 
-                disabled={sending || modalitiesList.length === 0}
-                className="px-4 py-2 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
-              >
-                {sending ? <Loader2 size={16} className="animate-spin"/> : <Send size={16}/>}
-                Envoyer
-              </button>
+              {!sending && (
+                <button 
+                  onClick={handleSendStudy} 
+                  disabled={modalitiesList.length === 0}
+                  className="px-4 py-2 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  <Send size={16}/>
+                  Envoyer
+                </button>
+              )}
             </div>
           </div>
         </div>
