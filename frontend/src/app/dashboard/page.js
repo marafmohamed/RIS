@@ -1005,10 +1005,10 @@ export default function DashboardPage() {
             <div className="p-6">
               <div className="mb-6">
                 <p className="text-gray-700 mb-2">
-                  Vous êtes sur le point d'envoyer <strong>{selectedStudies.length}</strong> étude(s) vers le nœud DICOM sélectionné.
+                  Vous êtes sur le point d&apos;envoyer <strong>{selectedStudies.length}</strong> étude(s) vers le nœud DICOM sélectionné.
                 </p>
                 <div className="bg-blue-50 text-blue-800 text-sm p-3 rounded-md border border-blue-100">
-                  Ces éléments seront ajoutés à la file d'attente et traités en arrière-plan.
+                  Ces éléments seront ajoutés à la file d&apos;attente et traités en arrière-plan.
                 </div>
               </div>
 
@@ -1038,7 +1038,7 @@ export default function DashboardPage() {
                 disabled={!batchTargetNode}
                 className="px-4 py-2 bg-blue-600 text-white font-medium rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
-                Confirmer l'envoi
+                Confirmer l&apos;envoi
               </button>
             </div>
           </div>

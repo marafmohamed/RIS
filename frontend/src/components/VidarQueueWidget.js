@@ -191,7 +191,7 @@ export default function VidarQueueWidget() {
                         onClick={handleClear}
                         className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
                     >
-                        <Trash2 size={12} /> Effacer l'historique
+                        <Trash2 size={12} /> Effacer l&apos;historique
                     </button>
                 </div>
             )}
