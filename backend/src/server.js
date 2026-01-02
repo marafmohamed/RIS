@@ -12,6 +12,8 @@ const dicomImagesRoutes = require("./routes/dicomImages");
 const settingsRoutes = require("./routes/settings");
 const templateRoutes = require("./routes/templates");
 const clinicRoutes = require("./routes/clinics");
+const dicomQueueRoutes = require("./routes/dicomQueue");
+const queueProcessor = require("./services/queueProcessor");
 
 const app = express();
 
@@ -70,6 +72,9 @@ mongoose
 
     // Start server (skip on Vercel serverless)
     if (!isVercel) {
+      // Start Queue Processor (Background Job)
+      queueProcessor.start();
+
       app.listen(PORT, "0.0.0.0", () => {
         console.log("=".repeat(60));
         console.log(`🚀 RIS Backend server running on port ${PORT}`);
@@ -143,6 +148,7 @@ app.use("/api/reports", reportRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/templates", templateRoutes);
 app.use("/api/clinics", clinicRoutes);
+app.use("/api/queue", dicomQueueRoutes);
 
 // 404 handler
 app.use((req, res) => {

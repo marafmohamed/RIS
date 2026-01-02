@@ -48,6 +48,11 @@ const templateSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  // Array of user IDs this template is shared with
+  sharedWith: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
   usageCount: {
     type: Number,
     default: 0

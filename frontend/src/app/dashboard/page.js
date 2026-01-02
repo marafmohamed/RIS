@@ -9,12 +9,13 @@ import {
   Search, Filter, Download, UserPlus,
   FileCheck, FileClock, FileX, Inbox,
   ChevronRight, ChevronLeft, Building2, Activity, Calendar,
-  FileText, Loader2, ArrowUpDown, ArrowUp, ArrowDown
+  FileText, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Send, CheckSquare, Square, X
 } from 'lucide-react';
 import { format, subDays } from 'date-fns';
 import { useAuth } from '@/lib/AuthContext';
 import { generatePDF } from '@/utils/pdfExport';
 import { generateWordDocument } from '@/utils/wordExport';
+import { queueAPI } from '@/lib/api';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -35,6 +36,12 @@ export default function DashboardPage() {
   // Selection State
   const [selectedStudy, setSelectedStudy] = useState(null);
   const [selectedRadiologist, setSelectedRadiologist] = useState('');
+  const [selectedStudies, setSelectedStudies] = useState([]); // Array of UIDs
+
+  // Batch Send State
+  const [showBatchSendModal, setShowBatchSendModal] = useState(false);
+  const [batchTargetNode, setBatchTargetNode] = useState('');
+  const [batchModalitiesList, setBatchModalitiesList] = useState([]);
 
   // Filter State
   const [filters, setFilters] = useState({
@@ -109,6 +116,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     setCurrentPage(1);
+    setSelectedStudies([]); // Clear selection on filter change
   }, [activeFilter, filters]);
 
   // NEW: Force restricted users to 'final' view only
@@ -121,7 +129,7 @@ export default function DashboardPage() {
   const handlePeriodChange = (period) => {
     setTimePeriod(period);
     const todayStr = format(new Date(), 'yyyy-MM-dd');
-    
+
     if (period === 'today') {
       setFilters(prev => ({ ...prev, startDate: todayStr, endDate: todayStr, patientName: '', patientId: '' }));
     } else if (period === '3days') {
@@ -167,7 +175,7 @@ export default function DashboardPage() {
     try {
       const isSearch = filters.patientName || filters.patientId;
       const activeFilters = { ...filters, ...searchFilters };
-      
+
       const params = {
         clinicId: activeFilters.clinicId,
         modality: activeFilters.modality,
@@ -176,15 +184,15 @@ export default function DashboardPage() {
       };
 
       if (!isSearch) {
-         if (timePeriod === 'today' || timePeriod === 'week' || timePeriod === 'all') {
-            params.quickFilter = timePeriod;
-         } else {
-            params.startDate = activeFilters.startDate;
-            params.endDate = activeFilters.endDate;
-         }
+        if (timePeriod === 'today' || timePeriod === 'week' || timePeriod === 'all') {
+          params.quickFilter = timePeriod;
+        } else {
+          params.startDate = activeFilters.startDate;
+          params.endDate = activeFilters.endDate;
+        }
       } else {
-         params.startDate = activeFilters.startDate;
-         params.endDate = activeFilters.endDate;
+        params.startDate = activeFilters.startDate;
+        params.endDate = activeFilters.endDate;
       }
 
       const response = await studiesAPI.getAll(params);
@@ -249,9 +257,9 @@ export default function DashboardPage() {
       }
       const report = reportResponse.data.data;
       const clinic = clinics.find(c => c._id === filters.clinicId);
-      
+
       await generatePDF(report, clinic, study.patientAge);
-      
+
       toast.success('PDF téléchargé avec succès');
     } catch (error) {
       console.error('Failed to download PDF:', error);
@@ -268,13 +276,70 @@ export default function DashboardPage() {
       }
       const report = reportResponse.data.data;
       const clinic = clinics.find(c => c._id === filters.clinicId);
-      
+
       await generateWordDocument(report, clinic, study.patientAge);
-      
+
       toast.success('Document Word téléchargé avec succès');
     } catch (error) {
       console.error('Failed to download Word:', error);
       toast.error('Erreur lors du téléchargement Word');
+    }
+  };
+
+  // --- BATCH SELECTION LOGIC ---
+  const toggleStudySelection = (e, studyUid) => {
+    e.stopPropagation();
+    setSelectedStudies(prev => {
+      if (prev.includes(studyUid)) {
+        return prev.filter(id => id !== studyUid);
+      } else {
+        return [...prev, studyUid];
+      }
+    });
+  };
+
+  const toggleSelectAll = (e, studiesToSelect) => {
+    e.stopPropagation();
+    if (selectedStudies.length === studiesToSelect.length) {
+      setSelectedStudies([]);
+    } else {
+      setSelectedStudies(studiesToSelect.map(s => s.studyInstanceUid));
+    }
+  };
+
+  const handleOpenBatchSend = async () => {
+    if (selectedStudies.length === 0) return;
+    try {
+      const response = await studiesAPI.getModalities(filters.clinicId);
+      setBatchModalitiesList(response.data || []);
+      if (response.data && response.data.length > 0) {
+        setBatchTargetNode(response.data[0]);
+        setShowBatchSendModal(true);
+      } else {
+        toast.error("Aucun nœud DICOM configuré pour cette clinique");
+      }
+    } catch (error) {
+      console.error('Failed to load modalities', error);
+      toast.error("Erreur lors du chargement des nœuds DICOM");
+    }
+  };
+
+  const handleConfirmBatchSend = async () => {
+    try {
+      const studiesToSend = studies.filter(s => selectedStudies.includes(s.studyInstanceUid));
+
+      await queueAPI.add({
+        studies: studiesToSend,
+        targetNode: batchTargetNode,
+        clinicId: filters.clinicId
+      });
+
+      toast.success(`${studiesToSend.length} études ajoutées à la file d'attente Vidar`);
+      setShowBatchSendModal(false);
+      setSelectedStudies([]);
+    } catch (error) {
+      console.error('Batch send error', error);
+      toast.error("Échec de l'ajout à la file d'attente");
     }
   };
 
@@ -341,8 +406,8 @@ export default function DashboardPage() {
 
   const getSortIcon = (key) => {
     if (sortConfig.key !== key) return <ArrowUpDown size={14} className="text-gray-400 ml-1" />;
-    return sortConfig.direction === 'asc' 
-      ? <ArrowUp size={14} className="text-blue-600 ml-1" /> 
+    return sortConfig.direction === 'asc'
+      ? <ArrowUp size={14} className="text-blue-600 ml-1" />
       : <ArrowDown size={14} className="text-blue-600 ml-1" />;
   };
 
@@ -371,11 +436,11 @@ export default function DashboardPage() {
   if (isRestrictedUser) {
     // Restricted users only see Finalized
     filterButtons = [
-      { 
-        id: 'final', 
-        label: 'Finalisés', 
-        icon: FileCheck, 
-        count: studies.filter(s => s.reportStatus === 'FINAL').length 
+      {
+        id: 'final',
+        label: 'Finalisés',
+        icon: FileCheck,
+        count: studies.filter(s => s.reportStatus === 'FINAL').length
       }
     ];
   } else {
@@ -569,6 +634,18 @@ export default function DashboardPage() {
                 <Filter size={16} />
                 Filtrer
               </button>
+
+              {/* Batch Send Button */}
+              {selectedStudies.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleOpenBatchSend}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors flex items-center gap-2 text-sm shadow-sm animate-in fade-in"
+                >
+                  <Send size={16} />
+                  Envoyer ({selectedStudies.length})
+                </button>
+              )}
             </form>
           </div>
 
@@ -604,6 +681,18 @@ export default function DashboardPage() {
                     <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">
                       {/* Header Row 1: Labels & Sort */}
                       <tr>
+                        {/* Checkbox Header */}
+                        <th className="px-4 py-3 bg-gray-50 text-left w-10">
+                          <button
+                            onClick={(e) => toggleSelectAll(e, currentStudies)}
+                            className="text-gray-500 hover:text-blue-600 focus:outline-none"
+                          >
+                            {currentStudies.length > 0 && selectedStudies.length === currentStudies.length
+                              ? <CheckSquare size={18} className="text-blue-600" />
+                              : <Square size={18} />
+                            }
+                          </button>
+                        </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 cursor-pointer hover:bg-gray-100" onClick={() => handleSort('patientName')}>
                           <div className="flex items-center">Patient {getSortIcon('patientName')}</div>
                         </th>
@@ -622,32 +711,33 @@ export default function DashboardPage() {
                       </tr>
                       {/* Header Row 2: Column Filters */}
                       <tr className="bg-gray-50 border-b border-gray-200">
+                        <th className="px-6 py-2"></th>
                         <th className="px-6 py-2">
-                          <input 
-                            className="w-full text-xs border-gray-300 rounded px-2 py-1 font-normal focus:ring-1 focus:ring-blue-500" 
+                          <input
+                            className="w-full text-xs border-gray-300 rounded px-2 py-1 font-normal focus:ring-1 focus:ring-blue-500"
                             placeholder="Filtrer..."
                             value={columnFilters.patientName}
-                            onChange={e => setColumnFilters({...columnFilters, patientName: e.target.value})}
+                            onChange={e => setColumnFilters({ ...columnFilters, patientName: e.target.value })}
                             onClick={e => e.stopPropagation()}
                           />
                         </th>
                         <th className="px-6 py-2"></th>
                         <th className="px-6 py-2"></th>
                         <th className="px-6 py-2">
-                          <input 
-                            className="w-full text-xs border-gray-300 rounded px-2 py-1 font-normal focus:ring-1 focus:ring-blue-500" 
+                          <input
+                            className="w-full text-xs border-gray-300 rounded px-2 py-1 font-normal focus:ring-1 focus:ring-blue-500"
                             placeholder="Mod..."
                             value={columnFilters.modality}
-                            onChange={e => setColumnFilters({...columnFilters, modality: e.target.value})}
+                            onChange={e => setColumnFilters({ ...columnFilters, modality: e.target.value })}
                             onClick={e => e.stopPropagation()}
                           />
                         </th>
                         <th className="px-6 py-2">
-                          <input 
-                            className="w-full text-xs border-gray-300 rounded px-2 py-1 font-normal focus:ring-1 focus:ring-blue-500" 
+                          <input
+                            className="w-full text-xs border-gray-300 rounded px-2 py-1 font-normal focus:ring-1 focus:ring-blue-500"
                             placeholder="Filtrer..."
                             value={columnFilters.studyDescription}
-                            onChange={e => setColumnFilters({...columnFilters, studyDescription: e.target.value})}
+                            onChange={e => setColumnFilters({ ...columnFilters, studyDescription: e.target.value })}
                             onClick={e => e.stopPropagation()}
                           />
                         </th>
@@ -664,6 +754,17 @@ export default function DashboardPage() {
                             onDoubleClick={() => handleRowDoubleClick(study)}
                             className="hover:bg-gray-50 cursor-pointer transition-colors"
                           >
+                            <td className="px-4 py-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                onClick={(e) => toggleStudySelection(e, study.studyInstanceUid)}
+                                className="focus:outline-none"
+                              >
+                                {selectedStudies.includes(study.studyInstanceUid)
+                                  ? <CheckSquare size={18} className="text-blue-600" />
+                                  : <Square size={18} className="text-gray-400 hover:text-gray-600" />
+                                }
+                              </button>
+                            </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="text-sm font-medium text-gray-900">{study.patientName}</div>
                               <div className="text-xs text-gray-500">{study.patientId}</div>
@@ -790,7 +891,7 @@ export default function DashboardPage() {
                               <span className="sr-only">Précédent</span>
                               <ChevronLeft className="h-5 w-5" aria-hidden="true" />
                             </button>
-                            
+
                             {/* Show first page */}
                             {currentPage > 3 && (
                               <>
@@ -812,11 +913,10 @@ export default function DashboardPage() {
                                 <button
                                   key={page}
                                   onClick={() => paginate(page)}
-                                  className={`relative inline-flex items-center px-4 py-2 text-sm font-semibold ${
-                                    currentPage === page
-                                      ? 'z-10 bg-blue-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600'
-                                      : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50'
-                                  }`}
+                                  className={`relative inline-flex items-center px-4 py-2 text-sm font-semibold ${currentPage === page
+                                    ? 'z-10 bg-blue-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600'
+                                    : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50'
+                                    }`}
                                 >
                                   {page}
                                 </button>
@@ -881,6 +981,65 @@ export default function DashboardPage() {
             <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
               <button onClick={() => setShowAssignModal(false)} className="px-4 py-2 border rounded-lg">Annuler</button>
               <button onClick={handleAssignStudy} className="px-4 py-2 bg-blue-600 text-white rounded-lg">Assigner</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Batch Send Modal */}
+      {showBatchSendModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
+          <div className="bg-white rounded-lg shadow-xl w-[500px] max-w-full m-4">
+            <div className="flex justify-between items-center p-4 border-b">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <Send size={20} className="text-blue-600" />
+                Envoi groupé vers Vidar
+              </h3>
+              <button
+                onClick={() => setShowBatchSendModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6">
+              <div className="mb-6">
+                <p className="text-gray-700 mb-2">
+                  Vous êtes sur le point d'envoyer <strong>{selectedStudies.length}</strong> étude(s) vers le nœud DICOM sélectionné.
+                </p>
+                <div className="bg-blue-50 text-blue-800 text-sm p-3 rounded-md border border-blue-100">
+                  Ces éléments seront ajoutés à la file d'attente et traités en arrière-plan.
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <label className="block text-sm font-medium text-gray-700">Destination</label>
+                <select
+                  value={batchTargetNode}
+                  onChange={(e) => setBatchTargetNode(e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  {batchModalitiesList.map(mod => (
+                    <option key={mod} value={mod}>{mod}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 p-4 border-t bg-gray-50 rounded-b-lg">
+              <button
+                onClick={() => setShowBatchSendModal(false)}
+                className="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleConfirmBatchSend}
+                disabled={!batchTargetNode}
+                className="px-4 py-2 bg-blue-600 text-white font-medium rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                Confirmer l'envoi
+              </button>
             </div>
           </div>
         </div>

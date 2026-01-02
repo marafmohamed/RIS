@@ -13,11 +13,12 @@ router.get('/', async (req, res) => {
   try {
     const { modality, studyType } = req.query;
 
-    // Build filter to get user's own templates OR default templates from others
+    // Build filter to get user's own templates OR default templates OR templates shared with user
     const filter = {
       $or: [
         { userId: req.user._id },
-        { isDefault: true }
+        { isDefault: true },
+        { sharedWith: req.user._id }
       ]
     };
 
@@ -80,7 +81,8 @@ router.post('/', [
       findings,
       conclusion,
       isDefault,
-      triggerWord
+      triggerWord,
+      sharedWith
     } = req.body;
 
     // If setting as default, unset other defaults for same modality
@@ -101,7 +103,8 @@ router.post('/', [
       findings: findings || '',
       conclusion: conclusion || '',
       isDefault: isDefault || false,
-      triggerWord: triggerWord || ''
+      triggerWord: triggerWord || '',
+      sharedWith: sharedWith || []
     });
 
     res.status(201).json({
@@ -127,7 +130,8 @@ router.put('/:id', async (req, res) => {
       findings,
       conclusion,
       isDefault,
-      triggerWord
+      triggerWord,
+      sharedWith
     } = req.body;
 
     const template = await Template.findOne({
@@ -155,6 +159,7 @@ router.put('/:id', async (req, res) => {
     if (conclusion !== undefined) template.conclusion = conclusion;
     if (isDefault !== undefined) template.isDefault = isDefault;
     if (triggerWord !== undefined) template.triggerWord = triggerWord;
+    if (sharedWith !== undefined) template.sharedWith = sharedWith;
 
     await template.save();
 

@@ -30,10 +30,10 @@ api.interceptors.response.use(
   (error) => {
     // Only redirect on 401 if we're not already on the login page
     // and if there was a token (meaning user was authenticated before)
-    if (error.response?.status === 401 && 
-        typeof window !== 'undefined' && 
-        window.location.pathname !== '/login' &&
-        localStorage.getItem('token')) {
+    if (error.response?.status === 401 &&
+      typeof window !== 'undefined' &&
+      window.location.pathname !== '/login' &&
+      localStorage.getItem('token')) {
       // Clear token and redirect to login
       localStorage.removeItem('token');
       localStorage.removeItem('user');
@@ -57,6 +57,7 @@ export const usersAPI = {
   create: (userData) => api.post('/users', userData),
   update: (id, userData) => api.put(`/users/${id}`, userData),
   delete: (id) => api.delete(`/users/${id}`),
+  getRadiologists: () => api.get('/users?role=RADIOLOGIST'),
 };
 
 // Studies API
@@ -105,6 +106,15 @@ export const clinicsAPI = {
   create: (data) => api.post('/clinics', data),
   update: (id, data) => api.put(`/clinics/${id}`, data),
   delete: (id) => api.delete(`/clinics/${id}`),
+};
+
+// Queue API
+export const queueAPI = {
+  getAll: () => api.get('/queue'),
+  add: (data) => api.post('/queue', data),
+  retry: (id) => api.post(`/queue/${id}/retry`),
+  remove: (id) => api.delete(`/queue/${id}`),
+  clear: () => api.delete('/queue'),
 };
 
 export default api;

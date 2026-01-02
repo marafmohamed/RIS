@@ -4,13 +4,15 @@ import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import Navbar from '@/components/Navbar';
 import TemplateEditor from '@/components/templates/TemplateEditor';
-import { templatesAPI, authAPI } from '@/lib/api';
+import { templatesAPI, authAPI, usersAPI } from '@/lib/api';
 import { Plus, Edit2, Trash2, Star, Copy, FileText, X, Save, Lock } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function ProfilePage() {
     const [user, setUser] = useState(null);
     const [templates, setTemplates] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [radiologists, setRadiologists] = useState([]);
     const [showTemplateModal, setShowTemplateModal] = useState(false);
     const [editingTemplate, setEditingTemplate] = useState(null);
     const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -32,13 +34,24 @@ export default function ProfilePage() {
         findings: '',
         conclusion: '',
         triggerWord: '',
-        isDefault: false
+        isDefault: false,
+        sharedWith: []
     });
 
     useEffect(() => {
         loadUserData();
         loadTemplates();
+        loadRadiologists();
     }, []);
+
+    const loadRadiologists = async () => {
+        try {
+            const response = await usersAPI.getRadiologists();
+            setRadiologists(response.data);
+        } catch (error) {
+            console.error('Failed to load radiologists:', error);
+        }
+    };
 
     const loadUserData = async () => {
         try {
@@ -74,10 +87,9 @@ export default function ProfilePage() {
             technique: '',
             findings: '',
             conclusion: '',
-            findings: '',
-            conclusion: '',
             triggerWord: '',
-            isDefault: false
+            isDefault: false,
+            sharedWith: []
         });
         setShowTemplateModal(true);
     };
@@ -95,7 +107,8 @@ export default function ProfilePage() {
             findings: template.findings || '',
             conclusion: template.conclusion || '',
             triggerWord: template.triggerWord || '',
-            isDefault: template.isDefault || false
+            isDefault: template.isDefault || false,
+            sharedWith: template.sharedWith || []
         });
         setShowTemplateModal(true);
     };
@@ -113,7 +126,8 @@ export default function ProfilePage() {
             findings: template.findings || '',
             conclusion: template.conclusion || '',
             triggerWord: '',
-            isDefault: false
+            isDefault: false,
+            sharedWith: []
         });
         setShowTemplateModal(true);
     };
@@ -343,66 +357,74 @@ export default function ProfilePage() {
                                     </div>
                                 ) : (
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        {templates.map((template) => (
-                                            <div
-                                                key={template._id}
-                                                className="group border border-gray-200 rounded-xl p-4 hover:shadow-md transition-all duration-200 bg-white hover:border-blue-200"
-                                            >
-                                                <div className="flex items-start justify-between mb-3">
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="flex items-center space-x-2">
-                                                            <h3 className="font-semibold text-gray-900 truncate">{template.name}</h3>
-                                                            {template.isDefault && (
-                                                                <Star size={14} className="text-yellow-400 fill-yellow-400 flex-shrink-0" />
+                                        <AnimatePresence>
+                                            {templates.map((template) => (
+                                                <motion.div
+                                                    layoutId={`card-${template._id}`}
+                                                    key={template._id}
+                                                    onDoubleClick={() => handleEditTemplate(template)}
+                                                    className="group border border-gray-200 rounded-xl p-4 hover:shadow-md transition-all duration-200 bg-white hover:border-blue-200 cursor-pointer"
+                                                    initial={{ opacity: 0, scale: 0.9 }}
+                                                    animate={{ opacity: 1, scale: 1 }}
+                                                    exit={{ opacity: 0, scale: 0.9 }}
+                                                    transition={{ duration: 0.2 }}
+                                                >
+                                                    <div className="flex items-start justify-between mb-3">
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center space-x-2">
+                                                                <motion.h3 layoutId={`title-${template._id}`} className="font-semibold text-gray-900 truncate">{template.name}</motion.h3>
+                                                                {template.isDefault && (
+                                                                    <Star size={14} className="text-yellow-400 fill-yellow-400 flex-shrink-0" />
+                                                                )}
+                                                            </div>
+                                                            {template.modality && (
+                                                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 mt-1">
+                                                                    {template.modality}
+                                                                </span>
                                                             )}
                                                         </div>
-                                                        {template.modality && (
-                                                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 mt-1">
-                                                                {template.modality}
-                                                            </span>
-                                                        )}
+                                                        <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); handleEditTemplate(template); }}
+                                                                className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                                                title="Modifier"
+                                                            >
+                                                                <Edit2 size={16} />
+                                                            </button>
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); handleDuplicateTemplate(template); }}
+                                                                className="p-1.5 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                                                                title="Dupliquer"
+                                                            >
+                                                                <Copy size={16} />
+                                                            </button>
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); handleDeleteTemplate(template._id); }}
+                                                                className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                                title="Supprimer"
+                                                            >
+                                                                <Trash2 size={16} />
+                                                            </button>
+                                                        </div>
                                                     </div>
-                                                    <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <button
-                                                            onClick={() => handleEditTemplate(template)}
-                                                            className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                                            title="Modifier"
-                                                        >
-                                                            <Edit2 size={16} />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleDuplicateTemplate(template)}
-                                                            className="p-1.5 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                                                            title="Dupliquer"
-                                                        >
-                                                            <Copy size={16} />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleDeleteTemplate(template._id)}
-                                                            className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                                            title="Supprimer"
-                                                        >
-                                                            <Trash2 size={16} />
-                                                        </button>
+
+                                                    {template.description && (
+                                                        <p className="text-sm text-gray-600 mb-3 line-clamp-2 h-10">
+                                                            {template.description}
+                                                        </p>
+                                                    )}
+
+                                                    <div className="flex items-center justify-between pt-3 border-t border-gray-50 mt-2">
+                                                        <span className="text-xs text-gray-400">
+                                                            Utilisé {template.usageCount} fois
+                                                        </span>
+                                                        <span className="text-xs text-gray-400">
+                                                            {new Date(template.updatedAt || Date.now()).toLocaleDateString()}
+                                                        </span>
                                                     </div>
-                                                </div>
-
-                                                {template.description && (
-                                                    <p className="text-sm text-gray-600 mb-3 line-clamp-2 h-10">
-                                                        {template.description}
-                                                    </p>
-                                                )}
-
-                                                <div className="flex items-center justify-between pt-3 border-t border-gray-50 mt-2">
-                                                    <span className="text-xs text-gray-400">
-                                                        Utilisé {template.usageCount} fois
-                                                    </span>
-                                                    <span className="text-xs text-gray-400">
-                                                        {new Date(template.updatedAt || Date.now()).toLocaleDateString()}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        ))}
+                                                </motion.div>
+                                            ))}
+                                        </AnimatePresence>
                                     </div>
                                 )}
                             </div>
@@ -411,140 +433,183 @@ export default function ProfilePage() {
                 </div>
 
                 {/* Template Modal */}
-                {showTemplateModal && (
-                    <div
-                        className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto"
-                        onClick={() => setShowTemplateModal(false)}
-                    >
-                        <div
-                            className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full my-8 transform transition-all"
-                            onClick={(e) => e.stopPropagation()}
+                <AnimatePresence>
+                    {showTemplateModal && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto"
+                            onClick={() => setShowTemplateModal(false)}
                         >
-                            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-                                <h3 className="text-xl font-bold text-gray-900">
-                                    {editingTemplate ? 'Modifier le modèle' : 'Nouveau modèle'}
-                                </h3>
-                                <button
-                                    onClick={() => setShowTemplateModal(false)}
-                                    className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
-                                >
-                                    <X size={20} />
-                                </button>
-                            </div>
-
-                            <form onSubmit={handleSaveTemplate} className="p-6 max-h-[calc(90vh-120px)] overflow-y-auto">
-                                <div className="grid grid-cols-1 md:grid-cols-12 gap-6 mb-8">
-                                    <div className="md:col-span-8 space-y-4">
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                Nom du Modèle <span className="text-red-500">*</span>
-                                            </label>
-                                            <input
-                                                type="text"
-                                                required
-                                                value={formData.name}
-                                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
-                                                placeholder="ex: TDM Cérébral Standard"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                Description
-                                            </label>
-                                            <input
-                                                type="text"
-                                                value={formData.description}
-                                                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
-                                                placeholder="Brève description de ce modèle"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                Mot déclencheur (Raccourci)
-                                            </label>
-                                            <input
-                                                type="text"
-                                                value={formData.triggerWord}
-                                                onChange={(e) => setFormData({ ...formData, triggerWord: e.target.value })}
-                                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
-                                                placeholder="ex: abdo (Tapez 'abdo' puis Entrée pour insérer)"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <div className="md:col-span-4 space-y-4 bg-gray-50 p-4 rounded-xl">
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                Modalité
-                                            </label>
-                                            <select
-                                                value={formData.modality}
-                                                onChange={(e) => setFormData({ ...formData, modality: e.target.value })}
-                                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                                            >
-                                                <option value="">Sélectionner...</option>
-                                                {modalityOptions.map(mod => (
-                                                    <option key={mod} value={mod}>{mod}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-
-                                        <label className="flex items-start space-x-3 p-2 hover:bg-gray-100 rounded-lg cursor-pointer transition-colors">
-                                            <input
-                                                type="checkbox"
-                                                checked={formData.isDefault}
-                                                onChange={(e) => setFormData({ ...formData, isDefault: e.target.checked })}
-                                                className="mt-1 rounded text-blue-600 focus:ring-blue-500 border-gray-300"
-                                            />
-                                            <span className="text-sm text-gray-600">
-                                                Définir comme modèle par défaut pour cette modalité
-                                            </span>
-                                        </label>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <label className="block text-sm font-medium text-gray-700">
-                                        Contenu du Modèle
-                                    </label>
-                                    <div className=" rounded-xl overflow-hidden">
-                                        <TemplateEditor
-                                            initialTechnique={formData.technique}
-                                            initialFindings={formData.findings}
-                                            initialConclusion={formData.conclusion}
-                                            onChange={(data) => {
-                                                setFormData({
-                                                    ...formData,
-                                                    technique: data.technique,
-                                                    findings: data.findings,
-                                                    conclusion: data.conclusion
-                                                });
-                                            }}
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="flex justify-end space-x-3 mt-8 pt-6 border-t border-gray-100">
+                            <motion.div
+                                layoutId={editingTemplate?._id ? `card-${editingTemplate._id}` : undefined}
+                                className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full my-8 transform overflow-hidden"
+                                onClick={(e) => e.stopPropagation()}
+                                initial={!editingTemplate ? { opacity: 0, scale: 0.9, y: 20 } : undefined}
+                                animate={!editingTemplate ? { opacity: 1, scale: 1, y: 0 } : undefined}
+                                exit={!editingTemplate ? { opacity: 0, scale: 0.9, y: 20 } : undefined}
+                                transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                            >
+                                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+                                    <motion.h3 layoutId={editingTemplate?._id ? `title-${editingTemplate._id}` : undefined} className="text-xl font-bold text-gray-900">
+                                        {editingTemplate ? 'Modifier le modèle' : 'Nouveau modèle'}
+                                    </motion.h3>
                                     <button
-                                        type="button"
                                         onClick={() => setShowTemplateModal(false)}
-                                        className="px-6 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium transition-colors"
+                                        className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
                                     >
-                                        Annuler
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-sm hover:shadow transition-all"
-                                    >
-                                        {editingTemplate ? 'Mettre à jour' : 'Créer le modèle'}
+                                        <X size={20} />
                                     </button>
                                 </div>
-                            </form>
-                        </div>
-                    </div>
-                )}
+
+                                <form onSubmit={handleSaveTemplate} className="p-6 max-h-[calc(90vh-120px)] overflow-y-auto">
+                                    <div className="grid grid-cols-1 md:grid-cols-12 gap-6 mb-8">
+                                        <div className="md:col-span-8 space-y-4">
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                    Nom du Modèle <span className="text-red-500">*</span>
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    required
+                                                    value={formData.name}
+                                                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
+                                                    placeholder="ex: TDM Cérébral Standard"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                    Description
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={formData.description}
+                                                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
+                                                    placeholder="Brève description de ce modèle"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                    Mot déclencheur (Raccourci)
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={formData.triggerWord}
+                                                    onChange={(e) => setFormData({ ...formData, triggerWord: e.target.value })}
+                                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
+                                                    placeholder="ex: abdo (Tapez 'abdo' puis Entrée pour insérer)"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="md:col-span-4 space-y-4 bg-gray-50 p-4 rounded-xl">
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                    Modalité
+                                                </label>
+                                                <select
+                                                    value={formData.modality}
+                                                    onChange={(e) => setFormData({ ...formData, modality: e.target.value })}
+                                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                                                >
+                                                    <option value="">Sélectionner...</option>
+                                                    {modalityOptions.map(mod => (
+                                                        <option key={mod} value={mod}>{mod}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            <label className="flex items-start space-x-3 p-2 hover:bg-gray-100 rounded-lg cursor-pointer transition-colors">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={formData.isDefault}
+                                                    onChange={(e) => setFormData({ ...formData, isDefault: e.target.checked })}
+                                                    className="mt-1 rounded text-blue-600 focus:ring-blue-500 border-gray-300"
+                                                />
+                                                <span className="text-sm text-gray-600">
+                                                    Définir comme modèle par défaut pour cette modalité
+                                                </span>
+                                            </label>
+
+                                            {/* Shared With Section */}
+                                            <div className="pt-4 border-t border-gray-200">
+                                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                    Partager avec
+                                                </label>
+                                                <div className="border border-gray-300 rounded-lg p-2 max-h-40 overflow-y-auto bg-white">
+                                                    {radiologists.length === 0 ? (
+                                                        <p className="text-xs text-gray-500 italic p-1">Aucun radiologue disponible</p>
+                                                    ) : radiologists.filter(r => r._id !== user?._id).length > 0 ? (
+                                                        radiologists.filter(r => r._id !== user?._id).map((rad) => (
+                                                            <label key={rad._id} className="flex items-center space-x-2 p-1.5 hover:bg-gray-50 rounded cursor-pointer">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={formData.sharedWith?.includes(rad._id)}
+                                                                    onChange={(e) => {
+                                                                        const currentShared = formData.sharedWith || [];
+                                                                        if (e.target.checked) {
+                                                                            setFormData({ ...formData, sharedWith: [...currentShared, rad._id] });
+                                                                        } else {
+                                                                            setFormData({ ...formData, sharedWith: currentShared.filter(id => id !== rad._id) });
+                                                                        }
+                                                                    }}
+                                                                    className="rounded text-blue-600 focus:ring-blue-500 border-gray-300"
+                                                                />
+                                                                <span className="text-sm text-gray-700 truncate">{rad.fullName || rad.email}</span>
+                                                            </label>
+                                                        ))
+                                                    ) : (
+                                                        <p className="text-xs text-gray-500 italic p-1">Vous êtes le seul radiologue</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="block text-sm font-medium text-gray-700">
+                                            Contenu du Modèle
+                                        </label>
+                                        <div className=" rounded-xl overflow-hidden">
+                                            <TemplateEditor
+                                                initialTechnique={formData.technique}
+                                                initialFindings={formData.findings}
+                                                initialConclusion={formData.conclusion}
+                                                onChange={(data) => {
+                                                    setFormData({
+                                                        ...formData,
+                                                        technique: data.technique,
+                                                        findings: data.findings,
+                                                        conclusion: data.conclusion
+                                                    });
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="flex justify-end space-x-3 mt-8 pt-6 border-t border-gray-100">
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowTemplateModal(false)}
+                                            className="px-6 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium transition-colors"
+                                        >
+                                            Annuler
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-sm hover:shadow transition-all"
+                                        >
+                                            {editingTemplate ? 'Mettre à jour' : 'Créer le modèle'}
+                                        </button>
+                                    </div>
+                                </form>
+                            </motion.div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
 
                 {/* Password Change Modal */}
                 {showPasswordModal && (
@@ -640,3 +705,4 @@ export default function ProfilePage() {
         </div>
     );
 }
+

@@ -2,6 +2,7 @@ import './globals.css';
 import { Inter } from 'next/font/google';
 import { AuthProvider } from '@/lib/AuthContext';
 import { Toaster } from 'sonner';
+import VidarQueueWidget from '@/components/VidarQueueWidget';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -16,10 +17,11 @@ export default function RootLayout({ children }) {
       <body className={inter.className}>
         <AuthProvider>
           {children}
-          <Toaster 
-            position="top-right" 
-            richColors 
-            closeButton 
+          <VidarQueueWidget />
+          <Toaster
+            position="top-right"
+            richColors
+            closeButton
             duration={4000}
           />
         </AuthProvider>
